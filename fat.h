@@ -5,8 +5,8 @@
 #define BLOCKS_NUM 2048
 #define BLOCK_SIZE 512
 #define MAX_NAME_LENGTH 64
-#define DIRECTORY_ENTRIES_NUM 512
-#define MAX_CHILDREN_NUM 64
+#define DIRECTORY_ENTRIES_NUM 64
+#define MAX_CHILDREN_NUM 16
 
 #define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
@@ -60,7 +60,7 @@ Wrapper* Fat_init(const char* filename);
 int Fat_destroy(Wrapper* wrapper);
 
 //just temporarily return value is int
-int createFile(const char* filename);
+int createFile(Wrapper* wrapper, const char* filename);
 
 int eraseFile(FileHandle file);
 int fat_write(FileHandle to, const void* in, size_t size) ;

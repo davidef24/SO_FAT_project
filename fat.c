@@ -34,11 +34,12 @@ Wrapper* Fat_init(const char* filename){
     //now we set current_dir to root directory, which has index 0 and name '/'
 
     wrapper->current_dir = 0;
-    DirEntry entry = wrapper->current_disk->dir_table.entries[0];
-    entry.entry_name[0] = '/';
-    entry.entry_name[1] = '\0';
+    DirEntry* entry = &(wrapper->current_disk->dir_table.entries[0]);
+    entry->entry_name[0] = '/';
+    entry->entry_name[1] = '\0';
     
     //initialize fat table
+    //for now, if an entry value is 0 this means that it is free
     memset(&(wrapper->current_disk->fat_table), 0x00, sizeof(FatTable));
     return wrapper;
 }
@@ -56,9 +57,42 @@ int Fat_destroy(Wrapper* wrapper){
     return 0;
 }
 
+//result represents the index in the directory table entries array, if -1 there is an error 
+int find_entry(Wrapper* wrapper){
+    Disk * disk = wrapper->current_disk;
+    int res = -1;
+    
+    //we skip root directory
+    for(int i=0; i< DIRECTORY_ENTRIES_NUM; i++){
+        DirEntry entry = disk->dir_table.entries[i];
+        if(entry.entry_name[0] == 0){
+            res = i;
+            break;
+        }
+    }
+
+    //if res is still -1, there are no free entries
+    if(res == -1){
+        perror("no free entries");
+        return -1;
+    }
+
+    //check if current directory has reached max children number
+    int current_directory_index = wrapper->current_dir;
+    if(wrapper->current_disk->dir_table.entries[current_directory_index].num_children >= MAX_CHILDREN_NUM){
+        perror("maximum children number reached");
+        return -1;
+    }
+
+    return res;
+}
+
+//create a new file with name 'filename' in the current directory
 //it will return a FileHanlde, but temporarily I put integer as return value
-int createFile(const char* filename){
-    return 0;
+int createFile(Wrapper* wrapper, const char* filename){
+    //before creating a file, we need to find a free entry in DirTable
+    uint32_t free_entry = find_entry(wrapper);
+    return free_entry;
 }
 
 int eraseFile(FileHandle file){

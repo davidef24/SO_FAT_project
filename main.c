@@ -3,12 +3,15 @@
 #include <stdlib.h>
 
 int main(int argc, char* argv[]){
-    Wrapper * wrapper = Fat_init("prova.txt");
+    Wrapper * wrapper = Fat_init("disk_file");
     if (wrapper == NULL){
         perror("init error");
         return -1;
     }
     printf("New wrapper object created\n");
+
+    int res = createFile(wrapper, "first_file.txt");
+    printf("%d\n", res);
 
 
     if(Fat_destroy(wrapper) < 0){
