@@ -1,11 +1,14 @@
 #pragma once
-#include <stdint.h> 
+#include <stdint.h> //uint
+#include <stddef.h> // size_t
 
 #define BLOCKS_NUM 2048
 #define BLOCK_SIZE 512
 #define MAX_NAME_LENGTH 64
 #define DIRECTORY_ENTRIES_NUM 512
 #define MAX_CHILDREN_NUM 64
+
+#define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
 typedef enum EntryType {
 	FILE_TYPE,
@@ -38,8 +41,32 @@ typedef struct FileHandle {
 	uint32_t directory_entry;    
 } FileHandle;
 
+
 typedef struct Disk{
     FatTable fat_table;
     DirTable dir_table;
     Block block_list[BLOCKS_NUM];
 } Disk;
+
+typedef struct Wrapper{
+    uint32_t disk_fd;
+    uint32_t current_dir;
+    Disk * current_disk;
+} Wrapper;
+
+//initialize a new disk which will be an mmapped file and returns a wrapper
+Wrapper* Fat_init(const char* filename);
+
+int Fat_destroy(Wrapper* wrapper);
+
+//just temporarily return value is int
+int createFile(const char* filename);
+
+int eraseFile(FileHandle file);
+int fat_write(FileHandle to, const void* in, size_t size) ;
+int fat_read(FileHandle from, void* out, size_t size);
+int fat_seek(FileHandle file, size_t offset, int whence);
+int createDir(const char* dirName);
+int eraseDir(const char* dirName);
+int changeDir(const char* to);
+int listDir(const char* dirName);

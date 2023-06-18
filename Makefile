@@ -1,5 +1,5 @@
 CC=gcc
-CCOPTS=--std=c89 -Wall 
+CCOPTS= -Wall 
 
 HEADERS=fat.h
 
@@ -12,7 +12,7 @@ BINS=fat_test
 
 all:	 $(BINS)
 
-fat_test:		main.o 
+fat_test:		main.o fat.o
 	$(CC) $(CCOPTS) -o $@ $^
 
 clean:
