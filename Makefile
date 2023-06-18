@@ -12,7 +12,7 @@ BINS=fat_test
 
 all:	 $(BINS)
 
-fat_test:		main.o fat.o
+fat_test:		main.c fat.c
 	$(CC) $(CCOPTS) -o $@ $^
 
 clean:
