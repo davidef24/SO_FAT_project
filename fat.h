@@ -45,12 +45,6 @@ typedef struct Block{
     char block_content[BLOCK_SIZE];
 } Block;
 
-typedef struct FileHandle {
-	uint32_t current_pos;
-	uint32_t current_block_index;
-	uint32_t directory_entry;    
-} FileHandle;
-
 
 typedef struct Disk{
     FatTable fat_table;
@@ -64,6 +58,13 @@ typedef struct Wrapper{
     Disk * current_disk;
 } Wrapper;
 
+typedef struct FileHandle {
+	uint32_t current_pos;
+	uint32_t current_block_index;
+	uint32_t directory_entry;
+    Wrapper*  wrapper;   
+} FileHandle;
+
 //initialize a new disk which will be an mmapped file and returns a wrapper
 Wrapper* Disk_init(const char* filename);
 
@@ -72,13 +73,12 @@ void Fat_init(Wrapper* wrapper);
 
 int Fat_destroy(Wrapper* wrapper);
 
-//just temporarily return value is int
-int createFile(Wrapper* wrapper, const char* filename);
+FileHandle* createFile(Wrapper* wrapper, const char* filename);
 
-int eraseFile(FileHandle file);
-int fat_write(FileHandle to, const void* in, size_t size) ;
-int fat_read(FileHandle from, void* out, size_t size);
-int fat_seek(FileHandle file, size_t offset, int whence);
+int eraseFile(FileHandle* file);
+int fat_write(FileHandle* handle, const void* buffer, size_t size) ;
+int fat_read(FileHandle* handle, void* buffer, size_t size);
+int fat_seek(FileHandle* handle, size_t offset, int whence);
 int createDir(const char* dirName);
 int eraseDir(const char* dirName);
 int changeDir(const char* to);

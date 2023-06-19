@@ -11,10 +11,18 @@ int main(int argc, char* argv[]){
     printf("-----------------");
     printf("New wrapper object created\n");
 
-    if(createFile(wrapper, "first_file.txt") == -1){
+    FileHandle* handle= createFile(wrapper, "first_file.txt");
+    if(handle == NULL){
         perror("create file error");
         return -1;
     };
+
+    listDir(wrapper);
+
+    //expecting error message
+    createFile(wrapper, "first_file.txt");
+
+    eraseFile(handle);
 
     listDir(wrapper);
 

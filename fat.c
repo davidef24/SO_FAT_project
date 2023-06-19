@@ -102,15 +102,8 @@ int find_entry(Wrapper* wrapper, const char* entry_name){
         perror("maximum children number reached");
         return -1;
     }
-    //check if current directory already has a child with name entry_name
-    if (alreadyHasChildren(wrapper, entry_name) == -1){
-        printf("Current directory already has a child named %s\n", entry_name);
-        return -1;
-    }
-
     Disk * disk = wrapper->current_disk;
     int res = -1;
-    
     //we skip root directory
     for(int i=0; i< DIRECTORY_ENTRIES_NUM; i++){
         DirEntry entry = disk->dir_table.entries[i];
@@ -131,12 +124,12 @@ int find_entry(Wrapper* wrapper, const char* entry_name){
 
 //first, it looks for a free entry and sets it as the last since initially the allocation is of one block
 int32_t firstFatEntry(Wrapper* wrapper){
-    FatTable fat = wrapper->current_disk->fat_table;
+    FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
-        FatEntry entry = fat.entries[i];
-        if (entry.state == FREE_ENTRY){
-            entry.state = BUSY_ENTRY;
-            entry.value = LAST_ENTRY; 
+        FatEntry* entry = &(fat->entries[i]);
+        if (entry->state == FREE_ENTRY){
+            entry->state = BUSY_ENTRY;
+            entry->value = LAST_ENTRY; 
             return i;
         }
     }
@@ -144,17 +137,23 @@ int32_t firstFatEntry(Wrapper* wrapper){
 }
 
 //assigns name, type, first_fat_entry and adds child to parent
-int createFileEntry(Wrapper* wrapper, const char* filename, uint32_t child_entry_idx){
+FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t child_entry_idx){
+    //check if current directory already has a child with name entry_name
+    if (alreadyHasChildren(wrapper, filename) == -1){
+        printf("Current directory already has a child named %s\n", filename);
+        return NULL;
+    }
     Disk * disk = wrapper->current_disk;
     uint32_t parent_idx = wrapper ->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
-    uint32_t name_size = strlen(filename);
+    uint32_t name_size = strlen(filename) +1;
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
+    //assigns to the new file a first entry in the fat table, which will be set to  busy state and LAST_ENTRY value
     if((child_entry->first_fat_entry = firstFatEntry(wrapper) == -1)){
         perror("there are no free entries in fat table");
-        return -1;
+        return NULL;
     }
     //adds child to parent, assuming the limit children number has already been checked in find_entry
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
@@ -166,43 +165,100 @@ int createFileEntry(Wrapper* wrapper, const char* filename, uint32_t child_entry
         }
     } 
     parent_entry->num_children++;
-    return 0;
+    FileHandle* file_handle = (FileHandle*)malloc(sizeof(FileHandle));
+    if(file_handle == NULL){
+        perror("malloc error");
+        return NULL;
+    }
+    file_handle->current_block_index = 0;
+    file_handle->current_pos = 0;
+    file_handle->directory_entry = child_entry_idx;
+    file_handle->wrapper = wrapper;
+    return file_handle;
 }
 
 
 //create a new file with name 'filename' in the current directory
 //it will return a FileHanlde, but temporarily I put integer as return value
-int createFile(Wrapper* wrapper, const char* filename){
+FileHandle* createFile(Wrapper* wrapper, const char* filename){
     //before creating a file, we need to find a free entry in DirTable
     uint32_t free_entry = find_entry(wrapper, filename);
     if(free_entry == -1){
-        return -1;
+        return NULL;
     }
-    createFileEntry(wrapper, filename, free_entry);
+    FileHandle* handle = createFileEntry(wrapper, filename, free_entry);
+    return handle;
+}
+
+// all fat entries referring file to delete will be set to FREE_ENTRY
+void freeBlocks(Wrapper* wrapper, DirEntry* entry){
+    Disk* disk = wrapper->current_disk;
+    uint32_t current_entry_idx = entry->first_fat_entry;
+    printf("current_entry_idx: %d\n", current_entry_idx);
+    FatEntry current_entry = disk->fat_table.entries[current_entry_idx];
+    Block* current_block = &(disk->block_list[current_entry_idx]);
+    
+    while(current_entry.value != LAST_ENTRY){
+        memset(current_block, 0, sizeof(Block));
+        current_entry.state = FREE_ENTRY;
+        //next block index is the entry value of the fat table
+        uint32_t next_idx = current_entry.value;
+        current_entry = disk->fat_table.entries[next_idx];
+        current_block = &(disk->block_list[next_idx]);
+    }
+    memset(current_block, 0, sizeof(Block));
+
+}
+
+//for now, in this project the remove and create functions operate from current directory
+void removeChild(Wrapper* wrapper, uint32_t entry_idx){
+    Disk * disk = wrapper->current_disk;
+    uint32_t parent_idx = wrapper->current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
+    //we set children id sequencially, so it's useless iteratore for MAX_CHILD_NUM times
+    for(int i=0; i<parent_entry->num_children; i++){
+        uint32_t child_idx = parent_entry->children[i];
+        if (child_idx == entry_idx){
+            parent_entry->children[i] = 0;
+            break;
+        }
+    }
+}
+
+//to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
+int eraseFile(FileHandle* file){
+    Wrapper * wrapper = file->wrapper;
+    Disk* disk = wrapper->current_disk;
+    uint32_t entry_idx = file->directory_entry;
+    DirEntry* entry = &(disk->dir_table.entries[entry_idx]);
+    freeBlocks(wrapper, entry);
+    removeChild(wrapper, entry_idx);
+    return 0;
+}
+int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     return 0;
 }
 
-int eraseFile(FileHandle file){
+int fat_read(FileHandle* handle, void* buffer, size_t size) {
     return 0;
 }
-int fat_write(FileHandle to, const void* in, size_t size) {
+
+int fat_seek(FileHandle* handle, size_t offset, int whence){
     return 0;
 }
-int fat_read(FileHandle from, void* out, size_t size) {
-    return 0;
-}
-int fat_seek(FileHandle file, size_t offset, int whence){
-    return 0;
-}
+
 int createDir(const char* dirName){
     return 0;
 }
+
 int eraseDir(const char* dirName){
     return 0;
 }
+
 int changeDir(const char* to){
     return 0;
 }
+
 void listDir(Wrapper* wrapper){
     uint32_t current_dir_idx = wrapper->current_dir;
     Disk* disk = wrapper->current_disk;
@@ -211,6 +267,6 @@ void listDir(Wrapper* wrapper){
     for(int i=0; i < current_dir_entry.num_children; i++){
         uint32_t child_idx = current_dir_entry.children[i];
         DirEntry child = disk->dir_table.entries[child_idx];
-        printf("%s\n", child.entry_name);
+        printf("-----%s\n", child.entry_name);
     }
 }
