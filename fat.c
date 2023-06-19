@@ -223,6 +223,7 @@ void removeChild(Wrapper* wrapper, uint32_t entry_idx){
             break;
         }
     }
+    parent_entry->num_children--;
 }
 
 //to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
