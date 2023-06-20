@@ -10,10 +10,10 @@
 
 
 void Fat_init(Wrapper* wrapper){
-    FatTable fat = wrapper->current_disk->fat_table;
+    FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
-        FatEntry entry = fat.entries[i];
-        entry.state = FREE_ENTRY;
+        FatEntry* entry = &(fat->entries[i]);
+        entry->state = FREE_ENTRY;
     }
 }
 
@@ -96,7 +96,7 @@ int exceedChildLimit(Wrapper* wrapper){
 
 
 //result represents the index in the directory table entries array, if -1 there is an error 
-int find_entry(Wrapper* wrapper, const char* entry_name){
+int find_free_entry(Wrapper* wrapper, const char* entry_name){
     //check if current directory has reached max children number
     if (exceedChildLimit(wrapper)){
         perror("maximum children number reached");
@@ -123,7 +123,7 @@ int find_entry(Wrapper* wrapper, const char* entry_name){
 #define LAST_ENTRY ((uint32_t) (~0))
 
 //first, it looks for a free entry and sets it as the last since initially the allocation is of one block
-int32_t firstFatEntry(Wrapper* wrapper){
+int32_t setFirstFatEntry(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
@@ -151,7 +151,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
     //assigns to the new file a first entry in the fat table, which will be set to  busy state and LAST_ENTRY value
-    if((child_entry->first_fat_entry = firstFatEntry(wrapper) == -1)){
+    if((child_entry->first_fat_entry = setFirstFatEntry(wrapper) == -1)){
         perror("there are no free entries in fat table");
         return NULL;
     }
@@ -182,7 +182,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
 //it will return a FileHanlde, but temporarily I put integer as return value
 FileHandle* createFile(Wrapper* wrapper, const char* filename){
     //before creating a file, we need to find a free entry in DirTable
-    uint32_t free_entry = find_entry(wrapper, filename);
+    uint32_t free_entry = find_free_entry(wrapper, filename);
     if(free_entry == -1){
         return NULL;
     }
@@ -194,16 +194,18 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
     uint32_t current_entry_idx = entry->first_fat_entry;
-    printf("current_entry_idx: %d\n", current_entry_idx);
     FatEntry current_entry = disk->fat_table.entries[current_entry_idx];
     Block* current_block = &(disk->block_list[current_entry_idx]);
     
     while(current_entry.value != LAST_ENTRY){
+        //disk block
         memset(current_block, 0, sizeof(Block));
         current_entry.state = FREE_ENTRY;
         //next block index is the entry value of the fat table
         uint32_t next_idx = current_entry.value;
+        //fat table 
         current_entry = disk->fat_table.entries[next_idx];
+        
         current_block = &(disk->block_list[next_idx]);
     }
     memset(current_block, 0, sizeof(Block));
@@ -234,10 +236,96 @@ int eraseFile(FileHandle* file){
     DirEntry* entry = &(disk->dir_table.entries[entry_idx]);
     freeBlocks(wrapper, entry);
     removeChild(wrapper, entry_idx);
+    free(file);
     return 0;
 }
+
+//entry which is now last, will have a new value indicating the new entry 
+uint32_t updateFat(Disk* disk, uint32_t first){
+    uint32_t free = -1;
+    for(int i=0; i<BLOCK_SIZE; i++){
+        FatEntry* entry = &(disk->fat_table.entries[i]);
+        if(entry->state == FREE_ENTRY){
+            entry->state = BUSY_ENTRY;
+            entry->value = LAST_ENTRY;
+            free= i;
+            break;
+        }
+    }
+    if (free == -1){
+        perror("no free space");
+        return -1;
+    }
+    FatEntry* current_entry= &(disk->fat_table.entries[first]);
+    while(current_entry->value != LAST_ENTRY){
+        current_entry = &(disk->fat_table.entries[current_entry->value]);
+    }
+    current_entry->value = free;
+    return free;
+
+}
+
+Block* getNewBlock(FileHandle* handle){
+    Disk* disk = handle->wrapper->current_disk;
+    DirEntry* file_entry = &(disk->dir_table.entries[handle->directory_entry]);
+    uint32_t new_block_idx= updateFat(disk, file_entry->first_fat_entry);
+    Block* new_block = &(disk->block_list[new_block_idx]);
+    return new_block;
+}
+
+//handle contains block index. From this value we need the the index in block list, which is different
+uint32_t getBlockFromHandleIndex(FileHandle* handle){
+    Disk*disk = handle->wrapper->current_disk;
+    DirEntry dir_entry = disk->dir_table.entries[handle->directory_entry];
+    FatEntry fat_entry = disk->fat_table.entries[dir_entry.first_fat_entry];
+    uint32_t next_block_idx = dir_entry.first_fat_entry;
+    for(int i=0; i<handle->current_block_index; i++){
+        next_block_idx = fat_entry.value;
+        fat_entry = disk->fat_table.entries[next_block_idx];
+    }
+    return next_block_idx;
+}
+
 int fat_write(FileHandle* handle, const void* buffer, size_t size) {
-    return 0;
+    Disk* disk = handle->wrapper->current_disk;
+    uint32_t curr_pos=  handle->current_pos;
+    uint32_t current_block_remaining;
+    uint32_t written = 0;
+    uint32_t curr_block_idx = getBlockFromHandleIndex(handle);
+    uint32_t new_blocks_num=0;
+    Block* current_block = &(disk->block_list[curr_block_idx]);
+    uint32_t total_remaining = size;
+    uint32_t iteration_write;
+    //no need to iterate 
+    if(size < BLOCK_SIZE - curr_pos){
+          memcpy(current_block+curr_pos, buffer, size);
+          handle->current_pos += size;
+          written = size;
+          return written;
+    }
+    int it=0;
+    while(written < size){
+        if(handle->current_pos == BLOCK_SIZE){
+            current_block= getNewBlock(handle);
+            new_blocks_num++;
+            handle->current_block_index++;
+            handle->current_pos = 0;
+        }
+        current_block_remaining = BLOCK_SIZE - handle->current_pos;
+        if(total_remaining < current_block_remaining){
+            iteration_write = total_remaining;
+        }
+        else{
+            iteration_write = current_block_remaining;
+        }
+        memcpy(current_block + curr_pos, buffer + written, iteration_write);
+        handle->current_pos += iteration_write;
+        written += iteration_write;
+        total_remaining -= iteration_write;
+        it ++;
+    }
+    
+    return written;
 }
 
 int fat_read(FileHandle* handle, void* buffer, size_t size) {
