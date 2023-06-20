@@ -23,6 +23,12 @@ typedef struct DirEntry {
     uint32_t children[MAX_CHILDREN_NUM];
 } DirEntry;
 
+typedef enum FatWhence{
+    FAT_CURRENT=0,
+    FAT_END =1,
+    FAT_SET= 2
+} FatWhence;
+
 typedef enum FatEntryState {
     FREE_ENTRY,
     BUSY_ENTRY
@@ -78,7 +84,7 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename);
 int eraseFile(FileHandle* file);
 int fat_write(FileHandle* handle, const void* buffer, size_t size) ;
 int fat_read(FileHandle* handle, void* buffer, size_t size);
-int fat_seek(FileHandle* handle, size_t offset, int whence);
+int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence);
 int createDir(const char* dirName);
 int eraseDir(const char* dirName);
 int changeDir(const char* to);

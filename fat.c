@@ -6,6 +6,7 @@
 #include <fcntl.h> //to open disk file
 #include <unistd.h> // close, ftruncate
 #include <stddef.h> // size_t
+#include <errno.h>
 
 
 
@@ -328,12 +329,55 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     return written;
 }
 
+//start reading from current position of the file handle size bytes
 int fat_read(FileHandle* handle, void* buffer, size_t size) {
     return 0;
 }
 
-int fat_seek(FileHandle* handle, size_t offset, int whence){
-    return 0;
+//returns offset from file beginning
+int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
+    printf("-------------------fat_seek-------------");
+    printf("initial file_handle state: current_pos: %d\tcurrent_block_index: %d\n", handle->current_pos, handle->current_block_index);
+    uint32_t block_offset, blocks_num;
+    if(whence == FAT_END){
+        if(offset > 0) {
+            perror("invalid offset");
+            return -1;
+        }
+        else{
+            blocks_num = offset / BLOCK_SIZE;
+            block_offset = handle->current_pos + offset % BLOCK_SIZE;
+            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
+            return 0;
+        }
+    }
+    else if(whence == FAT_SET){
+        if((int) offset < 0){
+            perror("invalid offset");
+            return -1;
+        } 
+        else{
+            blocks_num = offset / BLOCK_SIZE;
+            block_offset = handle->current_pos + offset % BLOCK_SIZE;
+            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
+            return 0;
+        }
+    }
+    else{
+        //check if the offset is too large
+        uint32_t total_file_size = (handle->current_block_index+1)*BLOCK_SIZE + handle->current_pos;
+        uint32_t blocks_occupied = handle->current_block_index +1;
+        if(total_file_size + offset < 0 || total_file_size + offset > blocks_occupied * BLOCK_SIZE){
+            perror("invalid offset");
+            return -1;
+        }
+        else{
+            blocks_num = offset / BLOCK_SIZE;
+            block_offset = offset % BLOCK_SIZE;
+            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
+            return 0;
+        }
+    }
 }
 
 int createDir(const char* dirName){

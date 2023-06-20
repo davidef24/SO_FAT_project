@@ -27,8 +27,11 @@ int main(int argc, char* argv[]){
     fat_write(handle, test, (int)sizeof(test));
 
     printf("Handle state after write\n");
-    printf("curr pos: %d\t", handle->current_pos);
-    printf("curr block idx: %d\n", handle->current_block_index);
+    printf("current block index: %d\t", handle->current_block_index);
+    printf("current position: %d\n", handle->current_pos);
+
+    fat_seek(handle, -45, FAT_CURRENT);
+    
 
     eraseFile(handle);
 
