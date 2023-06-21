@@ -174,6 +174,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     file_handle->current_block_index = 0;
     file_handle->current_pos = 0;
     file_handle->directory_entry = child_entry_idx;
+    file_handle->last_pos_occupied = 0;
     file_handle->wrapper = wrapper;
     return file_handle;
 }
@@ -322,6 +323,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         memcpy(current_block + curr_pos, buffer + written, iteration_write);
         handle->current_pos += iteration_write;
         written += iteration_write;
+        handle->last_pos_occupied += iteration_write;
         total_remaining -= iteration_write;
         it ++;
     }
@@ -329,26 +331,38 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     return written;
 }
 
-//start reading from current position of the file handle size bytes
+//start reading from handle current position
 int fat_read(FileHandle* handle, void* buffer, size_t size) {
+    Disk * disk = handle->wrapper;
+    uint32_t read_bytes = 0;
+    uint32_t remaining = size;
+    uint32_t curr_block_idx = getBlockFromHandleIndex(handle);
+    Block* current_block = &(disk->block_list[curr_block_idx]);
+    uint32_t iteration_read;
     return 0;
+}
+
+void updateHandle(FileHandle* handle, uint32_t new_position){
+    uint32_t new_block_idx = new_position / BLOCK_SIZE;
+    uint32_t new_current_pos = new_position % BLOCK_SIZE;
+    handle->current_pos = new_current_pos;
+    handle->current_block_index = new_block_idx;
 }
 
 //returns offset from file beginning
 int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
-    printf("-------------------fat_seek-------------");
-    printf("initial file_handle state: current_pos: %d\tcurrent_block_index: %d\n", handle->current_pos, handle->current_block_index);
-    uint32_t block_offset, blocks_num;
+    uint32_t absolute_position = (handle->current_block_index) * BLOCK_SIZE + handle->current_pos;
+    uint32_t new_position;
     if(whence == FAT_END){
         if(offset > 0) {
             perror("invalid offset");
             return -1;
         }
         else{
-            blocks_num = offset / BLOCK_SIZE;
-            block_offset = handle->current_pos + offset % BLOCK_SIZE;
-            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
-            return 0;
+            absolute_position = handle->last_pos_occupied;
+            new_position = absolute_position + offset;
+            updateHandle(handle, new_position);
+            return new_position;
         }
     }
     else if(whence == FAT_SET){
@@ -357,25 +371,25 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
             return -1;
         } 
         else{
-            blocks_num = offset / BLOCK_SIZE;
-            block_offset = handle->current_pos + offset % BLOCK_SIZE;
-            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
-            return 0;
+            //in this case offset is referred to the beginning of the file
+            absolute_position = 0;
+            new_position = absolute_position + offset;
+            updateHandle(handle, new_position);
+            return new_position;
         }
     }
     else{
         //check if the offset is too large
-        uint32_t total_file_size = (handle->current_block_index+1)*BLOCK_SIZE + handle->current_pos;
-        uint32_t blocks_occupied = handle->current_block_index +1;
-        if(total_file_size + offset < 0 || total_file_size + offset > blocks_occupied * BLOCK_SIZE){
+        uint32_t available_size = (handle->current_block_index+1)*BLOCK_SIZE;
+        if(absolute_position + offset < 0 || absolute_position + offset > available_size){
             perror("invalid offset");
             return -1;
         }
         else{
-            blocks_num = offset / BLOCK_SIZE;
-            block_offset = offset % BLOCK_SIZE;
-            printf("blocks_num = %d\t block_offset= %d\n", blocks_num, block_offset);
-            return 0;
+            absolute_position = (handle->current_block_index) * BLOCK_SIZE + handle->current_pos;
+            new_position = absolute_position + offset;
+            updateHandle(handle, new_position);
+            return new_position;
         }
     }
 }

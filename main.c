@@ -23,14 +23,14 @@ int main(int argc, char* argv[]){
     //expecting error message
     createFile(wrapper, "first_file.txt");
 
-    const char test[] = "This is a test string for the method fat_write and I want it to take 2 blocks and a half to see if it works";
+    const char test[] = "This is a test string for fat_seek method. This is the second test string for fat_seek method. This is the third test string for fat_seek method.";
     fat_write(handle, test, (int)sizeof(test));
 
     printf("Handle state after write\n");
     printf("current block index: %d\t", handle->current_block_index);
     printf("current position: %d\n", handle->current_pos);
 
-    fat_seek(handle, -45, FAT_CURRENT);
+    fat_seek(handle, -13, FAT_CURRENT);
     
 
     eraseFile(handle);
