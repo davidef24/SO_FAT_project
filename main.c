@@ -4,15 +4,17 @@
 #include <string.h>
 
 int main(int argc, char* argv[]){
+    const char writeTest[] = "This is a test string for fat_seek method. This is the second test string for fat_seek method. This is the third test string for fat_seek method.";
+    char readTest[256] = {0};
     Wrapper * wrapper = Disk_init("disk_file");
     if (wrapper == NULL){
         perror("init error");
         return -1;
     }
-    printf("-----------------");
     printf("New wrapper object created\n");
 
-    FileHandle* handle= createFile(wrapper, "first_file.txt");
+    const char fileName[] = "first_file.txt";
+    FileHandle* handle= createFile(wrapper, fileName);
     if(handle == NULL){
         perror("create file error");
         return -1;
@@ -23,25 +25,37 @@ int main(int argc, char* argv[]){
     //expecting error message
     createFile(wrapper, "first_file.txt");
 
-    const char test[] = "This is a test string for fat_seek method. This is the second test string for fat_seek method. This is the third test string for fat_seek method.";
-    fat_write(handle, test, (int)sizeof(test));
+    int32_t num_write = fat_write(handle, writeTest, (int)sizeof(writeTest));
+    if(num_write == -1){
+        return -1;
+    }
+    printf("Just wrote %d bytes in %s\n", num_write, fileName);
 
-    printf("Handle state after write\n");
-    printf("current block index: %d\t", handle->current_block_index);
-    printf("current position: %d\n", handle->current_pos);
+    printf("Handle state after write: \tcurrent block index: %d\t current position: %d\n", handle->current_block_index, handle->current_pos);
 
-    fat_seek(handle, -13, FAT_CURRENT);
-    
+    if(fat_seek(handle, -500, FAT_CURRENT) == -1){
+        puts("fat seek error");
+        return -1;
+    }
+
+    printf("Handle state after seek: \tcurrent block index: %d\t current position: %d\n", handle->current_block_index, handle->current_pos);
+
+    int32_t res= fat_read(handle, readTest, 500);
+    if(res == -1){
+        return -1;
+    }
+    printf("Just read %d bytes from %s\n", fat_read(handle, readTest, 10), fileName);
+    printf("-----after fat_read buffer contains %s--------------------\n", readTest);
 
     eraseFile(handle);
 
+    printf("After delete ");
     listDir(wrapper);
 
     if(Fat_destroy(wrapper) < 0){
-        perror("destroy error");
+        puts("destroy error");
         return -1;
     }
-    printf("-----------------");
     printf("Wrapper succesfully destroyed\n");
     return 0;
 }

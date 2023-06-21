@@ -1,6 +1,6 @@
 #include "fat.h"
 #include <stdlib.h> //malloc
-#include <stdio.h> //perror 
+#include <stdio.h> //puts 
 #include <string.h> //memset, memcpy ecc
 #include <sys/mman.h> //mmap
 #include <fcntl.h> //to open disk file
@@ -26,17 +26,17 @@ Wrapper* Disk_init(const char* filename){
     wrapper->disk_fd = open(filename, O_CREAT | O_RDWR | O_TRUNC, 0666);
     if (wrapper->disk_fd == -1){
         free(wrapper);
-        perror("open error");
+        puts("open error");
         return NULL;
     }
     if(ftruncate(wrapper->disk_fd, sizeof(Disk)) == -1){
         free(wrapper);
-        perror("ftruncate error");
+        puts("ftruncate error");
         return NULL;
     }		
     wrapper->current_disk = (Disk*) mmap(NULL, sizeof(Disk), PROT_READ | PROT_WRITE, MAP_SHARED, wrapper->disk_fd, 0);
     if (wrapper->current_disk == MAP_FAILED){
-        perror("mmap error");
+        puts("mmap error");
         free(wrapper);
         close(wrapper->disk_fd);
         return NULL;
@@ -58,11 +58,11 @@ Wrapper* Disk_init(const char* filename){
 
 int Fat_destroy(Wrapper* wrapper){
     if(munmap(wrapper->current_disk, MMAPPED_MEMORY_SIZE) == -1){
-        perror("unmap error");
+        puts("unmap error");
         return -1;
     }
     if(close(wrapper->disk_fd) < 0){
-        perror("close error");
+        puts("close error");
         return -1;
     }
     free(wrapper);
@@ -100,7 +100,7 @@ int exceedChildLimit(Wrapper* wrapper){
 int find_free_entry(Wrapper* wrapper, const char* entry_name){
     //check if current directory has reached max children number
     if (exceedChildLimit(wrapper)){
-        perror("maximum children number reached");
+        puts("maximum children number reached");
         return -1;
     }
     Disk * disk = wrapper->current_disk;
@@ -115,7 +115,7 @@ int find_free_entry(Wrapper* wrapper, const char* entry_name){
     }
     //if res is still -1, there are no free entries
     if(res == -1){
-        perror("no free entries");
+        puts("no free entries");
         return -1;
     }
     return res;
@@ -153,7 +153,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     child_entry->type = FILE_TYPE;
     //assigns to the new file a first entry in the fat table, which will be set to  busy state and LAST_ENTRY value
     if((child_entry->first_fat_entry = setFirstFatEntry(wrapper) == -1)){
-        perror("there are no free entries in fat table");
+        puts("there are no free entries in fat table");
         return NULL;
     }
     //adds child to parent, assuming the limit children number has already been checked in find_entry
@@ -168,7 +168,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     parent_entry->num_children++;
     FileHandle* file_handle = (FileHandle*)malloc(sizeof(FileHandle));
     if(file_handle == NULL){
-        perror("malloc error");
+        puts("malloc error");
         return NULL;
     }
     file_handle->current_block_index = 0;
@@ -255,7 +255,7 @@ uint32_t updateFat(Disk* disk, uint32_t first){
         }
     }
     if (free == -1){
-        perror("no free space");
+        puts("no free space");
         return -1;
     }
     FatEntry* current_entry= &(disk->fat_table.entries[first]);
@@ -276,13 +276,16 @@ Block* getNewBlock(FileHandle* handle){
 }
 
 //handle contains block index. From this value we need the the index in block list, which is different
-uint32_t getBlockFromHandleIndex(FileHandle* handle){
+uint32_t getBlockFromIndex(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
     DirEntry dir_entry = disk->dir_table.entries[handle->directory_entry];
     FatEntry fat_entry = disk->fat_table.entries[dir_entry.first_fat_entry];
     uint32_t next_block_idx = dir_entry.first_fat_entry;
     for(int i=0; i<handle->current_block_index; i++){
         next_block_idx = fat_entry.value;
+        if(next_block_idx == LAST_ENTRY){
+            return -1;
+        }
         fat_entry = disk->fat_table.entries[next_block_idx];
     }
     return next_block_idx;
@@ -293,14 +296,18 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     uint32_t curr_pos=  handle->current_pos;
     uint32_t current_block_remaining;
     uint32_t written = 0;
-    uint32_t curr_block_idx = getBlockFromHandleIndex(handle);
+    uint32_t curr_block_idx = getBlockFromIndex(handle);
+    if(curr_block_idx == -1){
+        puts("getBlockFromIndex error");
+        return -1;
+    }
     uint32_t new_blocks_num=0;
     Block* current_block = &(disk->block_list[curr_block_idx]);
     uint32_t total_remaining = size;
     uint32_t iteration_write;
     //no need to iterate 
     if(size < BLOCK_SIZE - curr_pos){
-          memcpy(current_block+curr_pos, buffer, size);
+          memcpy(current_block->block_content +curr_pos, buffer, size);
           handle->current_pos += size;
           written = size;
           return written;
@@ -320,7 +327,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         else{
             iteration_write = current_block_remaining;
         }
-        memcpy(current_block + curr_pos, buffer + written, iteration_write);
+        memcpy(current_block->block_content + curr_pos, buffer + written, iteration_write);
         handle->current_pos += iteration_write;
         written += iteration_write;
         handle->last_pos_occupied += iteration_write;
@@ -332,14 +339,54 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
 }
 
 //start reading from handle current position
+//returns number of bytes read
 int fat_read(FileHandle* handle, void* buffer, size_t size) {
-    Disk * disk = handle->wrapper;
+    Disk * disk = handle->wrapper->current_disk;
     uint32_t read_bytes = 0;
-    uint32_t remaining = size;
-    uint32_t curr_block_idx = getBlockFromHandleIndex(handle);
+    uint32_t total_remaining = size;
+    uint32_t curr_block_idx = getBlockFromIndex(handle);
+    if(curr_block_idx == -1){
+        puts("getBlockFromIndex error");
+        return -1;
+    }
     Block* current_block = &(disk->block_list[curr_block_idx]);
-    uint32_t iteration_read;
-    return 0;
+    
+    uint32_t curr_pos=  handle->current_pos;
+    printf("curr_pos: %d\n", curr_pos);
+    printf("Current block content: %s\n", current_block->block_content);
+    uint32_t iteration_read, current_block_remaining;
+    
+    //read is performed only in a disk block 
+    if(size < BLOCK_SIZE - curr_pos){
+          memcpy(buffer, current_block->block_content +curr_pos, size);
+          handle->current_pos += size;
+          iteration_read = size;
+          return iteration_read; // (???) what if reading from FAT_END n bytes forward till the end of the block?
+    }
+    while(read_bytes < size){
+        if(handle->current_pos == BLOCK_SIZE){
+            handle->current_block_index++;
+            handle->current_pos = 0;
+            curr_block_idx = getBlockFromIndex(handle);
+            if(curr_block_idx == -1){
+                puts("buffer overflow");
+                return -1;
+            }
+            current_block = &(disk->block_list[curr_block_idx]);
+        }
+        current_block_remaining = BLOCK_SIZE - handle->current_pos;
+        if(total_remaining < current_block_remaining){
+            iteration_read = total_remaining;
+        }
+        else{
+            iteration_read = current_block_remaining;
+        }
+        memcpy(buffer + read_bytes, current_block->block_content + curr_pos, iteration_read);
+        handle->current_pos += iteration_read;
+        read_bytes += iteration_read;
+        total_remaining -= iteration_read;
+    }
+    return iteration_read;
 }
 
 void updateHandle(FileHandle* handle, uint32_t new_position){
@@ -355,7 +402,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
     uint32_t new_position;
     if(whence == FAT_END){
         if(offset > 0) {
-            perror("invalid offset");
+            puts("invalid seek offset");
             return -1;
         }
         else{
@@ -367,7 +414,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
     }
     else if(whence == FAT_SET){
         if((int) offset < 0){
-            perror("invalid offset");
+            puts("invalid seek offset");
             return -1;
         } 
         else{
@@ -382,7 +429,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
         //check if the offset is too large
         uint32_t available_size = (handle->current_block_index+1)*BLOCK_SIZE;
         if(absolute_position + offset < 0 || absolute_position + offset > available_size){
-            perror("invalid offset");
+            puts("invalid seek offset");
             return -1;
         }
         else{
