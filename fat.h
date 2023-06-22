@@ -86,9 +86,9 @@ int eraseFile(FileHandle* file);
 int fat_write(FileHandle* handle, const void* buffer, size_t size) ;
 int fat_read(FileHandle* handle, void* buffer, size_t size);
 int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence);
-int createDir(const char* dirName);
-int eraseDir(const char* dirName);
-int changeDir(const char* to);
+int createDir(Wrapper* wrapper, const char* dirName);
+int eraseDir(Wrapper* wrapper,const char* dirName);
+int changeDir(Wrapper* wrapper,const char* newDirectory);
 
 //lists all children of current dirctory
 void listDir(Wrapper* wrapper);

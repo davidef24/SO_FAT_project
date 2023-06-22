@@ -13,6 +13,18 @@ int main(int argc, char* argv[]){
     }
     printf("New wrapper object created\n");
 
+    int32_t res = createDir(wrapper, "newDir1");
+    if(res == -1) return -1; 
+
+    res = createDir(wrapper, "newDir2");
+    if(res == -1) return -1; 
+
+    listDir(wrapper);
+
+    res= changeDir(wrapper, "newDir4");
+
+    res= changeDir(wrapper, "newDir2");
+
     const char fileName[] = "first_file.txt";
     FileHandle* handle= createFile(wrapper, fileName);
     if(handle == NULL){
@@ -33,14 +45,14 @@ int main(int argc, char* argv[]){
 
     printf("Handle state after write: \tcurrent block index: %d\t current position: %d\n", handle->current_block_index, handle->current_pos);
 
-    if(fat_seek(handle, -500, FAT_CURRENT) == -1){
+    if(fat_seek(handle, 0, FAT_SET) == -1){
         puts("fat seek error");
         return -1;
     }
 
     printf("Handle state after seek: \tcurrent block index: %d\t current position: %d\n", handle->current_block_index, handle->current_pos);
 
-    int32_t res= fat_read(handle, readTest, 500);
+    res= fat_read(handle, readTest, 500);
     if(res == -1){
         return -1;
     }

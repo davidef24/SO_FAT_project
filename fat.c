@@ -69,21 +69,23 @@ int Fat_destroy(Wrapper* wrapper){
     return 0;
 }
 
-
-int alreadyHasChildren(Wrapper* wrapper, const char* entry_name){
-    Disk * disk = wrapper->current_disk;
-    uint32_t parent_idx = wrapper ->current_dir;
-    DirEntry parent_entry = disk->dir_table.entries[parent_idx];
-    uint32_t parent_children_num = parent_entry.num_children;
+DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx){
+    Disk* disk = wrapper->current_disk;
+    uint32_t parent_dir_idx = wrapper->current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    uint32_t parent_children_num = parent_entry->num_children;
     for (int i = 0; i < parent_children_num; i++){
-        uint32_t child_entry_idx = parent_entry.children[i];
-        DirEntry child_entry = disk->dir_table.entries[child_entry_idx];
-        const char* child_name = child_entry.entry_name;
-        if (strcmp(entry_name, child_name) == 0){
-            return -1;
+        uint32_t child_entry_idx = parent_entry->children[i];
+        DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
+        const char* child_name = child_entry->entry_name;
+        if (strcmp(entryName, child_name) == 0 && child_entry->type == type){
+            if(entry_idx != NULL){
+                *entry_idx = child_entry_idx;
+            }
+            return child_entry;
         }
     }
-    return 0;
+    return NULL;
 }
 
 int exceedChildLimit(Wrapper* wrapper){
@@ -140,7 +142,7 @@ int32_t setFirstFatEntry(Wrapper* wrapper){
 //assigns name, type, first_fat_entry and adds child to parent
 FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t child_entry_idx){
     //check if current directory already has a child with name entry_name
-    if (alreadyHasChildren(wrapper, filename) == -1){
+    if (find_by_name(wrapper, filename, FILE_TYPE, NULL) != NULL){
         printf("Current directory already has a child named %s\n", filename);
         return NULL;
     }
@@ -207,7 +209,6 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
         uint32_t next_idx = current_entry.value;
         //fat table 
         current_entry = disk->fat_table.entries[next_idx];
-        
         current_block = &(disk->block_list[next_idx]);
     }
     memset(current_block, 0, sizeof(Block));
@@ -215,19 +216,26 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
 }
 
 //for now, in this project the remove and create functions operate from current directory
-void removeChild(Wrapper* wrapper, uint32_t entry_idx){
+int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     Disk * disk = wrapper->current_disk;
     uint32_t parent_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     //we set children id sequencially, so it's useless iteratore for MAX_CHILD_NUM times
+    int8_t removed= 0;
     for(int i=0; i<parent_entry->num_children; i++){
         uint32_t child_idx = parent_entry->children[i];
         if (child_idx == entry_idx){
             parent_entry->children[i] = 0;
+            removed = 1;
             break;
         }
     }
+    if(!removed){
+        puts("There is no child with that entry_idx");
+        return -1;
+    }
     parent_entry->num_children--;
+    return 0;
 }
 
 //to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
@@ -237,7 +245,10 @@ int eraseFile(FileHandle* file){
     uint32_t entry_idx = file->directory_entry;
     DirEntry* entry = &(disk->dir_table.entries[entry_idx]);
     freeBlocks(wrapper, entry);
-    removeChild(wrapper, entry_idx);
+    if(removeChild(wrapper, entry_idx) == -1){
+        return -1;
+    };
+    entry->entry_name[0] = 0;
     free(file);
     return 0;
 }
@@ -441,15 +452,86 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
     }
 }
 
-int createDir(const char* dirName){
+DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_entry_idx){
+    if (find_by_name(wrapper, dirName, DIRECTORY_TYPE, NULL) != NULL){
+        printf("Current directory already has a child named %s\n", dirName);
+        return NULL;
+    }
+    Disk * disk = wrapper->current_disk;
+    uint32_t parent_idx = wrapper ->current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
+    DirEntry* new_entry = &(disk->dir_table.entries[new_entry_idx]);
+    uint32_t name_size = strlen(dirName) +1;
+    memcpy(new_entry->entry_name, dirName, name_size);
+    new_entry->type = DIRECTORY_TYPE;
+    //adds child to parent, assuming the limit children number has already been checked in find_entry
+    for(int i=0; i<MAX_CHILDREN_NUM;i++){
+        //assume 0 as value of children[i] means it's free (any directory can have root as child)
+        if (parent_entry->children[i] == 0){
+            puts("Found free entry");
+            parent_entry->children[i] = new_entry_idx;
+            break;
+        }
+    } 
+    parent_entry->num_children++;
+    new_entry->num_children = 0;
+    memset(new_entry->children, 0x00, sizeof(new_entry->children));
+    return new_entry;
+}
+
+int createDir(Wrapper* wrapper, const char* dirName){
+    int32_t new_entry_idx = find_free_entry(wrapper, dirName);
+    if (new_entry_idx == -1){
+        puts("no free entry");
+        return -1;
+    }
+    DirEntry* new_entry = createDirEntry(wrapper, dirName, new_entry_idx);
+    if(new_entry == NULL){
+        return -1;
+    }
     return 0;
 }
 
-int eraseDir(const char* dirName){
+
+
+int eraseDir(Wrapper* wrapper, const char* dirName){
+    Disk* disk = wrapper->current_disk;
+    uint32_t parent_dir_idx = wrapper->current_dir;
+    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, NULL);
+    if(to_delete == NULL){
+        puts("No directory with given name");
+        return -1;
+    }
+    for(int i=0; i < to_delete->num_children; i++){
+        uint32_t child_idx = to_delete->children[i];
+        DirEntry* child = &(disk->dir_table.entries[child_idx]);
+        if(removeChild(wrapper, child_idx) == -1){
+                return -1;
+        };
+        child->entry_name[0] = 0;
+        child->num_children = 0;
+        if(child->type == FILE_TYPE){
+            freeBlocks(wrapper, child);
+        }
+        else if(child->type == DIRECTORY_TYPE){
+            wrapper->current_dir = child_idx;
+            if(eraseDir(wrapper, child->entry_name) == -1){
+                return -1;
+            }
+            wrapper->current_dir = parent_dir_idx;
+        }
+    }
     return 0;
 }
 
-int changeDir(const char* to){
+int changeDir(Wrapper* wrapper, const char* newDirectory){
+    uint32_t new_dir_idx;
+    DirEntry* new_dir = find_by_name(wrapper, newDirectory, DIRECTORY_TYPE, &(new_dir_idx));
+    if(new_dir == NULL){
+        puts("No such directory");
+        return -1;
+    }
+    wrapper->current_dir = new_dir_idx;
     return 0;
 }
 
