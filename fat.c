@@ -8,7 +8,7 @@
 #include <stddef.h> // size_t
 #include <errno.h>
 
-
+#define FREE_DIR_CHILD_ENTRY ((uint8_t) (~0))
 
 void Fat_init(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
@@ -48,7 +48,7 @@ Wrapper* Disk_init(const char* filename){
     entry->entry_name[0] = '/';
     entry->entry_name[1] = '\0';
     entry->num_children=0;
-    memset(entry->children, 0x00, sizeof(entry->children));
+    memset(entry->children, FREE_DIR_CHILD_ENTRY, sizeof(entry->children));
     
     //initialize fat table
     //for now, if an entry value is 0 this means that it is free
@@ -69,21 +69,28 @@ int Fat_destroy(Wrapper* wrapper){
     return 0;
 }
 
-DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx){
+DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx, uint32_t* index_in_child_list){
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
-    uint32_t parent_children_num = parent_entry->num_children;
-    for (int i = 0; i < parent_children_num; i++){
+    uint16_t touched = 0;
+    for (int i = 0; i < MAX_CHILDREN_NUM; i++){
         uint32_t child_entry_idx = parent_entry->children[i];
+        if(child_entry_idx != FREE_DIR_CHILD_ENTRY){
+            touched++;
+        }
         DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
         const char* child_name = child_entry->entry_name;
         if (strcmp(entryName, child_name) == 0 && child_entry->type == type){
             if(entry_idx != NULL){
                 *entry_idx = child_entry_idx;
             }
+            if(index_in_child_list != NULL){
+                *index_in_child_list = i;
+            }
             return child_entry;
         }
+        if(touched >= parent_entry->num_children) return NULL;
     }
     return NULL;
 }
@@ -142,7 +149,7 @@ int32_t setFirstFatEntry(Wrapper* wrapper){
 //assigns name, type, first_fat_entry and adds child to parent
 FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t child_entry_idx){
     //check if current directory already has a child with name entry_name
-    if (find_by_name(wrapper, filename, FILE_TYPE, NULL) != NULL){
+    if (find_by_name(wrapper, filename, FILE_TYPE, NULL, NULL) != NULL){
         printf("Current directory already has a child named %s\n", filename);
         return NULL;
     }
@@ -153,16 +160,17 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     uint32_t name_size = strlen(filename) +1;
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
+    child_entry->parent_idx = parent_idx;
     //assigns to the new file a first entry in the fat table, which will be set to  busy state and LAST_ENTRY value
     if((child_entry->first_fat_entry = setFirstFatEntry(wrapper) == -1)){
         puts("there are no free entries in fat table");
         return NULL;
     }
+    printf("Gonna create new file with index %d in dir table and adding it to %s children\n", child_entry_idx, parent_entry->entry_name);
     //adds child to parent, assuming the limit children number has already been checked in find_entry
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
         //assume 0 as value of children[i] means it's free (any directory can have root as child)
-        if (parent_entry->children[i] == 0){
-            puts("Found free entry");
+        if (parent_entry->children[i] == FREE_DIR_CHILD_ENTRY){
             parent_entry->children[i] = child_entry_idx;
             break;
         }
@@ -222,19 +230,21 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     //we set children id sequencially, so it's useless iteratore for MAX_CHILD_NUM times
     int8_t removed= 0;
-    for(int i=0; i<parent_entry->num_children; i++){
-        uint32_t child_idx = parent_entry->children[i];
-        if (child_idx == entry_idx){
-            parent_entry->children[i] = 0;
-            removed = 1;
-            break;
+    for(int i=0; i<MAX_CHILDREN_NUM; i++){
+        if(parent_entry->children[i] != FREE_DIR_CHILD_ENTRY){
+            uint32_t child_idx = parent_entry->children[i];
+            if (child_idx == entry_idx){
+                parent_entry->children[i] = FREE_DIR_CHILD_ENTRY;
+                parent_entry->num_children--;
+                removed = 1;
+                break;
+            }
         }
     }
     if(!removed){
-        puts("There is no child with that entry_idx");
+        printf("[ERROR]You are trying to remove from %s directory a child  with entry_idx %d\n", parent_entry->entry_name, entry_idx);
         return -1;
     }
-    parent_entry->num_children--;
     return 0;
 }
 
@@ -453,7 +463,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
 }
 
 DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_entry_idx){
-    if (find_by_name(wrapper, dirName, DIRECTORY_TYPE, NULL) != NULL){
+    if (find_by_name(wrapper, dirName, DIRECTORY_TYPE, NULL, NULL) != NULL){
         printf("Current directory already has a child named %s\n", dirName);
         return NULL;
     }
@@ -464,18 +474,19 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     uint32_t name_size = strlen(dirName) +1;
     memcpy(new_entry->entry_name, dirName, name_size);
     new_entry->type = DIRECTORY_TYPE;
+    new_entry->parent_idx = parent_idx;
+    printf("Gonna create new directory with index %d in dir table and adding it to %s children\n", new_entry_idx, parent_entry->entry_name);
     //adds child to parent, assuming the limit children number has already been checked in find_entry
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
         //assume 0 as value of children[i] means it's free (any directory can have root as child)
-        if (parent_entry->children[i] == 0){
-            puts("Found free entry");
+        if (parent_entry->children[i] == FREE_DIR_CHILD_ENTRY){
             parent_entry->children[i] = new_entry_idx;
             break;
         }
     } 
     parent_entry->num_children++;
     new_entry->num_children = 0;
-    memset(new_entry->children, 0x00, sizeof(new_entry->children));
+    memset(new_entry->children, FREE_DIR_CHILD_ENTRY, sizeof(new_entry->children));
     return new_entry;
 }
 
@@ -497,36 +508,64 @@ int createDir(Wrapper* wrapper, const char* dirName){
 int eraseDir(Wrapper* wrapper, const char* dirName){
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
-    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, NULL);
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    uint32_t to_delete_idx, index_in_child_list;
+    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_child_list);
     if(to_delete == NULL){
-        puts("No directory with given name");
+        printf("No such directory %s in directory %s", dirName, parent_entry->entry_name);
         return -1;
     }
-    for(int i=0; i < to_delete->num_children; i++){
+    //remove all to_delete_entry children
+    printf("MOVING CURRENT DIR FROM %s TO %s\n", disk->dir_table.entries[wrapper->current_dir].entry_name, to_delete->entry_name);
+    wrapper->current_dir = to_delete_idx;
+    printf("DELETING A DIRECTORY WITH %d CHILDREN\n", to_delete->num_children);
+    for(int i=0; i < MAX_CHILDREN_NUM; i++){
         uint32_t child_idx = to_delete->children[i];
-        DirEntry* child = &(disk->dir_table.entries[child_idx]);
-        if(removeChild(wrapper, child_idx) == -1){
-                return -1;
-        };
-        child->entry_name[0] = 0;
-        child->num_children = 0;
-        if(child->type == FILE_TYPE){
-            freeBlocks(wrapper, child);
-        }
-        else if(child->type == DIRECTORY_TYPE){
-            wrapper->current_dir = child_idx;
-            if(eraseDir(wrapper, child->entry_name) == -1){
-                return -1;
+        if(child_idx != FREE_DIR_CHILD_ENTRY){
+            DirEntry* child = &(disk->dir_table.entries[child_idx]);
+            if(removeChild(wrapper, child_idx) == -1){
+                    return -1;
+            };
+            memset(child->entry_name, 0, MAX_NAME_LENGTH);
+            child->num_children = 0;
+            if(child->type == FILE_TYPE){
+                freeBlocks(wrapper, child);
             }
-            wrapper->current_dir = parent_dir_idx;
+            else if(child->type == DIRECTORY_TYPE){
+                printf("MOVING CURRENT DIR FROM %s TO %s\n", disk->dir_table.entries[wrapper->current_dir].entry_name, child->entry_name);
+                wrapper->current_dir = child_idx;
+                if(eraseDir(wrapper, child->entry_name) == -1){
+                    return -1;
+                }
+            }
         }
     }
+    wrapper->current_dir = parent_dir_idx;
+    printf("Gonna set FREE_DIR_CHILD_ENTRY to %s previous entry with index %d\n", to_delete->entry_name, to_delete_idx);
+    to_delete->entry_name[0] = 0;
+    parent_entry->num_children--;
+    parent_entry->children[index_in_child_list] = FREE_DIR_CHILD_ENTRY;
+    printf("Directory succesfully removed\n");
     return 0;
+}
+
+int goBack(Wrapper* wrapper){
+    DirEntry current_dir_entry = wrapper->current_disk->dir_table.entries[wrapper->current_dir];
+    if(strcmp(current_dir_entry.entry_name, "/") == 0){
+        puts("current directory is root, can't go back");
+        return -1;
+    }
+    else{
+        uint32_t new_dir_idx = current_dir_entry.parent_idx;
+        wrapper->current_dir = new_dir_idx;
+        return 0;
+    }
 }
 
 int changeDir(Wrapper* wrapper, const char* newDirectory){
     uint32_t new_dir_idx;
-    DirEntry* new_dir = find_by_name(wrapper, newDirectory, DIRECTORY_TYPE, &(new_dir_idx));
+    if(strcmp(newDirectory, "..") == 0) return goBack(wrapper);
+    DirEntry* new_dir = find_by_name(wrapper, newDirectory, DIRECTORY_TYPE, &(new_dir_idx), NULL);
     if(new_dir == NULL){
         puts("No such directory");
         return -1;
@@ -540,9 +579,11 @@ void listDir(Wrapper* wrapper){
     Disk* disk = wrapper->current_disk;
     DirEntry current_dir_entry = disk->dir_table.entries[current_dir_idx];
     printf("Listing content of directory %s\n", current_dir_entry.entry_name);
-    for(int i=0; i < current_dir_entry.num_children; i++){
-        uint32_t child_idx = current_dir_entry.children[i];
-        DirEntry child = disk->dir_table.entries[child_idx];
-        printf("-----%s\n", child.entry_name);
+    for(int i=0; i < MAX_CHILDREN_NUM; i++){
+        if(current_dir_entry.children[i] != FREE_DIR_CHILD_ENTRY){
+           uint32_t child_idx = current_dir_entry.children[i];
+           DirEntry child = disk->dir_table.entries[child_idx];
+           printf("-----%s\n", child.entry_name); 
+        } 
     }
 }

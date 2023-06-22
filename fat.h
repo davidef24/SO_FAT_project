@@ -19,8 +19,9 @@ typedef struct DirEntry {
     char entry_name[MAX_NAME_LENGTH];
     DirEntryType type;
     uint32_t first_fat_entry;
+    uint32_t parent_idx;
     uint32_t num_children;
-    uint32_t children[MAX_CHILDREN_NUM];
+    uint8_t children[MAX_CHILDREN_NUM];
 } DirEntry;
 
 typedef enum FatWhence{
