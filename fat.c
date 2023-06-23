@@ -8,7 +8,7 @@
 #include <stddef.h> // size_t
 #include <errno.h>
 
-#define FREE_DIR_CHILD_ENTRY ((uint8_t) (~0))
+#define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
 void Fat_init(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
@@ -391,7 +391,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
             handle->current_pos = 0;
             curr_block_idx = getBlockFromIndex(handle);
             if(curr_block_idx == -1){
-                puts("buffer overflow");
+                puts("[ERROR] Buffer overflow");
                 return -1;
             }
             current_block = &(disk->block_list[curr_block_idx]);

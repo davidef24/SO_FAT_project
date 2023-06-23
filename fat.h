@@ -4,11 +4,13 @@
 
 #define BLOCKS_NUM 2048
 #define BLOCK_SIZE 32
-#define MAX_NAME_LENGTH 64
 #define DIRECTORY_ENTRIES_NUM 64
 #define MAX_CHILDREN_NUM 16
+#define MAX_NAME_LENGTH 64
 
-#define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
+
+
+#define FREE_DIR_CHILD_ENTRY ((uint8_t) (~0))
 
 typedef enum DirEntryType{
 	FILE_TYPE,
@@ -25,7 +27,7 @@ typedef struct DirEntry {
 } DirEntry;
 
 typedef enum FatWhence{
-    FAT_CURRENT=0,
+    FAT_CUR=0,
     FAT_END =1,
     FAT_SET= 2
 } FatWhence;
@@ -76,13 +78,12 @@ typedef struct FileHandle {
 //initialize a new disk which will be an mmapped file and returns a wrapper
 Wrapper* Disk_init(const char* filename);
 
-//initialize fat entries to free state
-void Fat_init(Wrapper* wrapper);
 
+void Fat_init(Wrapper* wrapper);
 int Fat_destroy(Wrapper* wrapper);
 
+//all functions operate from current directory
 FileHandle* createFile(Wrapper* wrapper, const char* filename);
-
 int eraseFile(FileHandle* file);
 int fat_write(FileHandle* handle, const void* buffer, size_t size) ;
 int fat_read(FileHandle* handle, void* buffer, size_t size);
@@ -90,6 +91,4 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence);
 int createDir(Wrapper* wrapper, const char* dirName);
 int eraseDir(Wrapper* wrapper,const char* dirName);
 int changeDir(Wrapper* wrapper,const char* newDirectory);
-
-//lists all children of current dirctory
 void listDir(Wrapper* wrapper);
