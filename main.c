@@ -3,6 +3,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+void printDirTable(Wrapper wrapper){
+    printf("************************PRINTING DIRECTORY TABLE**************************");
+    Disk disk = *(wrapper.current_disk);
+    for(int i=0; i<DIRECTORY_ENTRIES_NUM;i++){
+        DirEntry entry = disk.dir_table.entries[i];
+        if(entry.entry_name[0] != 0){
+            printf("In index %d of directory table there is entry %s\n", i, entry.entry_name);
+        }
+        
+    }
+}
+
 int main(int argc, char* argv[]){
     const char writeTest[] = "This is a test string for fat_seek method. This is the second test string for fat_seek method. This is the third test string for fat_seek method.";
     const char test2[] = "provaprovaprovaprova";
@@ -78,9 +90,13 @@ int main(int argc, char* argv[]){
     printf("[EXPECT ERROR]  ");
     res = changeDir(wrapper, "..");
 
+    printDirTable(*wrapper);
+
     res = eraseDir(wrapper, "newDir1");
     printf("[AFTER ERASE DIRECTORY] ");
     listDir(wrapper);
+
+    printDirTable(*wrapper);
 
 /*
     printf("Handle state after write: \tcurrent block index: %d\t current position: %d\n", handle1->current_block_index, handle->current_pos);

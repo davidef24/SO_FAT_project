@@ -70,6 +70,7 @@ int Fat_destroy(Wrapper* wrapper){
 }
 
 DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx, uint32_t* index_in_child_list){
+    
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
@@ -503,7 +504,13 @@ int createDir(Wrapper* wrapper, const char* dirName){
     return 0;
 }
 
-
+void printChildrenIndex(DirEntry entry){
+    for(int i=0; i<MAX_CHILDREN_NUM; i++){
+        if(entry.children[i] != FREE_DIR_CHILD_ENTRY){
+            printf("children with index in directory table %d\n", entry.children[i]);
+        }
+    }
+}
 
 int eraseDir(Wrapper* wrapper, const char* dirName){
     Disk* disk = wrapper->current_disk;
@@ -512,40 +519,38 @@ int eraseDir(Wrapper* wrapper, const char* dirName){
     uint32_t to_delete_idx, index_in_child_list;
     DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_child_list);
     if(to_delete == NULL){
-        printf("No such directory %s in directory %s", dirName, parent_entry->entry_name);
+        printf("No such directory %s in directory %s\n", dirName, parent_entry->entry_name);
         return -1;
     }
-    //remove all to_delete_entry children
-    printf("MOVING CURRENT DIR FROM %s TO %s\n", disk->dir_table.entries[wrapper->current_dir].entry_name, to_delete->entry_name);
+    //remove all children of to_delete directory, so we change current directory
     wrapper->current_dir = to_delete_idx;
-    printf("DELETING A DIRECTORY WITH %d CHILDREN\n", to_delete->num_children);
     for(int i=0; i < MAX_CHILDREN_NUM; i++){
         uint32_t child_idx = to_delete->children[i];
         if(child_idx != FREE_DIR_CHILD_ENTRY){
             DirEntry* child = &(disk->dir_table.entries[child_idx]);
-            if(removeChild(wrapper, child_idx) == -1){
-                    return -1;
-            };
-            memset(child->entry_name, 0, MAX_NAME_LENGTH);
-            child->num_children = 0;
-            if(child->type == FILE_TYPE){
-                freeBlocks(wrapper, child);
-            }
-            else if(child->type == DIRECTORY_TYPE){
-                printf("MOVING CURRENT DIR FROM %s TO %s\n", disk->dir_table.entries[wrapper->current_dir].entry_name, child->entry_name);
-                wrapper->current_dir = child_idx;
+            if(child->type == DIRECTORY_TYPE){
                 if(eraseDir(wrapper, child->entry_name) == -1){
                     return -1;
                 }
             }
+            else{
+                freeBlocks(wrapper, child);
+                if(removeChild(wrapper, child_idx) == -1){
+                    return -1;
+                };
+            }
+            memset(child->entry_name, 0, MAX_NAME_LENGTH);
+            child->num_children = 0;
         }
     }
+    //restoring current directory
     wrapper->current_dir = parent_dir_idx;
-    printf("Gonna set FREE_DIR_CHILD_ENTRY to %s previous entry with index %d\n", to_delete->entry_name, to_delete_idx);
+
+    //now remove to_delete directory from parent children
     to_delete->entry_name[0] = 0;
     parent_entry->num_children--;
     parent_entry->children[index_in_child_list] = FREE_DIR_CHILD_ENTRY;
-    printf("Directory succesfully removed\n");
+    printf("Directory %s succesfully removed\n", dirName);
     return 0;
 }
 
