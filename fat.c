@@ -10,7 +10,7 @@
 
 #define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
-void Fat_init(Wrapper* wrapper){
+void fat_table_init(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
@@ -18,7 +18,7 @@ void Fat_init(Wrapper* wrapper){
     }
 }
 
-Wrapper* Disk_init(const char* filename){
+Wrapper* fat_init(const char* filename){
     Wrapper * wrapper= (Wrapper*) malloc(sizeof(Wrapper));
     if (wrapper == NULL){
         return NULL;
@@ -52,11 +52,11 @@ Wrapper* Disk_init(const char* filename){
     
     //initialize fat table
     //for now, if an entry value is 0 this means that it is free
-    Fat_init(wrapper);
+    fat_table_init(wrapper);
     return wrapper;
 }
 
-int Fat_destroy(Wrapper* wrapper){
+int fat_destroy(Wrapper* wrapper){
     if(munmap(wrapper->current_disk, MMAPPED_MEMORY_SIZE) == -1){
         puts("unmap error");
         return -1;
@@ -167,7 +167,6 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
         puts("there are no free entries in fat table");
         return NULL;
     }
-    printf("Gonna create new file with index %d in dir table and adding it to %s children\n", child_entry_idx, parent_entry->entry_name);
     //adds child to parent, assuming the limit children number has already been checked in find_entry
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
         //assume 0 as value of children[i] means it's free (any directory can have root as child)
@@ -337,6 +336,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     int it=0;
     while(written < size){
         if(handle->current_pos == BLOCK_SIZE){
+            //extend file boundaries
             current_block= getNewBlock(handle);
             new_blocks_num++;
             handle->current_block_index++;
@@ -374,8 +374,6 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     Block* current_block = &(disk->block_list[curr_block_idx]);
     
     uint32_t curr_pos=  handle->current_pos;
-    printf("curr_pos: %d\n", curr_pos);
-    printf("Current block content: %s\n", current_block->block_content);
     uint32_t iteration_read, current_block_remaining;
     
     //read is performed only in a disk block 
@@ -390,9 +388,9 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
             handle->current_block_index++;
             handle->current_pos = 0;
             curr_block_idx = getBlockFromIndex(handle);
+            //there are no more blocks
             if(curr_block_idx == -1){
-                puts("[ERROR] Buffer overflow");
-                return -1;
+                return read_bytes;
             }
             current_block = &(disk->block_list[curr_block_idx]);
         }

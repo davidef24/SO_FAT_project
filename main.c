@@ -4,7 +4,7 @@
 #include <string.h>
 
 void printDirTable(Wrapper wrapper){
-    printf("************************PRINTING DIRECTORY TABLE**************************");
+    printf("********************printing directory table***********************\n");
     Disk disk = *(wrapper.current_disk);
     for(int i=0; i<DIRECTORY_ENTRIES_NUM;i++){
         DirEntry entry = disk.dir_table.entries[i];
@@ -13,109 +13,84 @@ void printDirTable(Wrapper wrapper){
         }
         
     }
+    printf("*******************************************\n");
 }
 
 int main(int argc, char* argv[]){
-    const char writeTest[] = "This is a test first string for fat_write method. This is a second test string for fat_write method. This is a third test string for fat_write method.";
-    const char seekTest[] = "This is a test first string for fat_seek method. This is a second test string for fat_seek method. This is a third test string for fat_seek method.";
+    const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm";
+    const char writeTest2[] = "Today we will talk about file systems and some ways to implement it";
     char readTest[256] = {0};
-    Wrapper * wrapper = Disk_init("disk_file");
+    Wrapper* wrapper = fat_init("disk_file");
     if (wrapper == NULL){
         perror("init error");
         return -1;
     }
     printf("New wrapper object created\n");
 
-    int32_t res = createDir(wrapper, "courses");
-    if(res == -1) return -1; 
-
-    res = createDir(wrapper, "images");
-    if(res == -1) return -1; 
-
-    listDir(wrapper);
-
-    //expecting error
-    res= changeDir(wrapper, "games");
-
-    res= changeDir(wrapper, "courses");
-
-    res = createDir(wrapper, "operating system");
-    if(res == -1) return -1;
-
-    res = createDir(wrapper, "algebra");
-    if(res == -1) return -1;
-
-    res = changeDir(wrapper, "operating system");
-
-    const char fileName1[] = "lesson1.txt";
-    FileHandle* handle1= createFile(wrapper, fileName1);
-    if(handle1 == NULL){
-        perror("create file error");
+    int32_t res = createDir(wrapper, "operating_system");
+    res = changeDir(wrapper, "operating_system");
+    FileHandle* handle = createFile(wrapper, "course_introduction.txt");
+    if((res = fat_write(handle, writeTest, sizeof(writeTest))) < 0){
+        puts("fat_write error");
         return -1;
     };
 
-
+    printf("Correctly wrote %d bytes\n", res);
     listDir(wrapper);
 
-    int32_t num_write = fat_write(handle1, writeTest, (int)sizeof(writeTest));
-    if(num_write == -1){
+    if((res = fat_seek(handle, 2, FAT_SET)) < 0){
+        puts("fat_seek error");
         return -1;
     }
-    printf("Just wrote %d bytes in %s\n", num_write, fileName1);
 
-    const char fileName2[] = "lesson2.txt";
-    FileHandle* handle2= createFile(wrapper, fileName2);
-    if(handle2 == NULL){
-        perror("create file error");
+    if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
+        puts("fat_read error");
+        return -1;
+    }
+
+
+    printf("Correctly read %d bytes. \nContent is %s\n", res, readTest);
+
+    res = createDir(wrapper, "lessons");
+    res = changeDir(wrapper, "lessons");
+
+    FileHandle* handle2 = createFile(wrapper, "os_2023-03-23.txt");
+    if((res = fat_write(handle2, writeTest2, sizeof(writeTest2))) < 0){
+        puts("fat_write error");
         return -1;
     };
-
-    num_write = fat_write(handle2, seekTest, (int)sizeof(seekTest));
-    if(num_write == -1){
-        return -1;
-    }
-    printf("Just wrote %d bytes in %s\n", num_write, fileName2);
-
-    listDir(wrapper);
-
-    res= changeDir(wrapper, "..");
-
-    listDir(wrapper);
+    printf("Correctly wrote %d bytes\n", res);
+    res = changeDir(wrapper, "..");
+    
 
     res = changeDir(wrapper, "..");
+    
 
-    printf("[EXPECT ERROR]  ");
-    res = changeDir(wrapper, "..");
-
-    if(fat_seek(handle2, -28, FAT_END) == -1){
-        puts("fat seek error");
-        return -1;
-    }
-
-    printf("Handle state after seek: \tcurrent block index: %d\t current position: %d\n", handle1->current_block_index, handle1->current_pos);
-
-    res= fat_read(handle1, readTest, 23);
-    if(res == -1){
-        return -1;
-    }
-    printf("Just read %d bytes from %s\n", fat_read(handle1, readTest, 10), writeTest);
-    printf("After fat_read, buffer contains %s--------------------\n", seekTest);
-
-    changeDir(wrapper, "courses");
-    changeDir(wrapper, "operating system");
-    eraseFile(handle1);
-
-    printf("After delete file\n");
+    res = createDir(wrapper, "personal_projects");
+    
     listDir(wrapper);
 
-    res = eraseDir(wrapper, "newDir1");
-    printf("[AFTER ERASE DIRECTORY]\n");
+    printDirTable(*wrapper);
+
+    res = eraseDir(wrapper, "operating_system");
     listDir(wrapper);
 
-    if(Fat_destroy(wrapper) < 0){
+    printDirTable(*wrapper);
+
+    res = changeDir(wrapper, "personal_projects");
+    FileHandle* handle3 = createFile(wrapper, "project_1");
+
+    listDir(wrapper);
+
+    res = eraseFile(handle3);
+
+    listDir(wrapper);
+
+    if(fat_destroy(wrapper) < 0){
         puts("destroy error");
         return -1;
     }
+    free(handle);
     free(handle2);
     printf("Wrapper succesfully destroyed\n");
     return 0;

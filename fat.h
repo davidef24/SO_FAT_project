@@ -76,11 +76,11 @@ typedef struct FileHandle {
 } FileHandle;
 
 //initialize a new disk which will be an mmapped file and returns a wrapper
-Wrapper* Disk_init(const char* filename);
+Wrapper* fat_init(const char* filename);
 
 
-void Fat_init(Wrapper* wrapper);
-int Fat_destroy(Wrapper* wrapper);
+void fat_table_init(Wrapper* wrapper);
+int fat_destroy(Wrapper* wrapper);
 
 //all functions operate from current directory
 FileHandle* createFile(Wrapper* wrapper, const char* filename);
