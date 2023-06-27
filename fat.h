@@ -2,8 +2,8 @@
 #include <stdint.h> //uint
 #include <stddef.h> // size_t
 
-#define BLOCKS_NUM 2048
-#define BLOCK_SIZE 32
+#define BLOCKS_NUM 4096
+#define BLOCK_SIZE 64
 #define DIRECTORY_ENTRIES_NUM 64
 #define MAX_CHILDREN_NUM 16
 #define MAX_NAME_LENGTH 64

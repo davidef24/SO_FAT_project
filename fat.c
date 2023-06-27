@@ -18,7 +18,21 @@ void fat_table_init(Wrapper* wrapper){
     }
 }
 
-Wrapper* fat_init(const char* filename){
+void printAllChildren(Wrapper wrapper){
+    Disk* disk = wrapper.current_disk;
+    uint32_t parent_dir_idx = wrapper.current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    printf("****************Children of %s directory*********************\n", parent_entry->entry_name);
+    for(int i=0; i < MAX_CHILDREN_NUM; i++){
+        uint32_t child_idx = parent_entry->children[i];
+        if(child_idx != FREE_DIR_CHILD_ENTRY){
+            DirEntry* child = &(disk->dir_table.entries[child_idx]);
+            printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
+        }
+    }
+}
+
+Wrapper* fat_init(const char* filename){ 
     Wrapper * wrapper= (Wrapper*) malloc(sizeof(Wrapper));
     if (wrapper == NULL){
         return NULL;
@@ -56,7 +70,7 @@ Wrapper* fat_init(const char* filename){
     return wrapper;
 }
 
-int fat_destroy(Wrapper* wrapper){
+int fat_destroy(Wrapper* wrapper){ 
     if(munmap(wrapper->current_disk, MMAPPED_MEMORY_SIZE) == -1){
         puts("unmap error");
         return -1;
@@ -69,29 +83,42 @@ int fat_destroy(Wrapper* wrapper){
     return 0;
 }
 
-DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx, uint32_t* index_in_child_list){
-    
+//this function checks in parent children if there is already a child named with entryName
+//if finds one, returns it
+//if entry_idx is not null, caller wants to know child index in directory table
+//if index_in_children_array is not NULL, caller wants to know index in parent children list
+DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType type, uint32_t* entry_idx, uint32_t* index_in_children_array){
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
     uint16_t touched = 0;
+    uint32_t child_entry_idx;
+    DirEntry* child_entry;
+    DirTable dir_table = disk->dir_table;
+    char* child_name;
     for (int i = 0; i < MAX_CHILDREN_NUM; i++){
-        uint32_t child_entry_idx = parent_entry->children[i];
-        if(child_entry_idx != FREE_DIR_CHILD_ENTRY){
+        child_entry_idx = parent_entry->children[i];
+        if(child_entry_idx == FREE_DIR_CHILD_ENTRY){
+            continue;
+        }
+        else{
             touched++;
-        }
-        DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
-        const char* child_name = child_entry->entry_name;
-        if (strcmp(entryName, child_name) == 0 && child_entry->type == type){
-            if(entry_idx != NULL){
-                *entry_idx = child_entry_idx;
+            if(touched > parent_entry->num_children) return NULL;
+            child_entry = &(dir_table.entries[child_entry_idx]);
+            child_name = child_entry->entry_name;
+            int res1 = strcmp(entryName, child_name);
+            if (res1 == 0 && child_entry->type == type){
+                if(entry_idx != NULL){
+                    *entry_idx = child_entry_idx;
+                }
+                if(index_in_children_array != NULL){
+                    *index_in_children_array = i;
+                }
+                return child_entry;
             }
-            if(index_in_child_list != NULL){
-                *index_in_child_list = i;
-            }
-            return child_entry;
+            
         }
-        if(touched >= parent_entry->num_children) return NULL;
+        
     }
     return NULL;
 }
@@ -116,7 +143,7 @@ int find_free_entry(Wrapper* wrapper, const char* entry_name){
     Disk * disk = wrapper->current_disk;
     int res = -1;
     //we skip root directory
-    for(int i=0; i< DIRECTORY_ENTRIES_NUM; i++){
+    for(int i=1; i< DIRECTORY_ENTRIES_NUM; i++){
         DirEntry entry = disk->dir_table.entries[i];
         if(entry.entry_name[0] == 0){
             res = i;
@@ -159,6 +186,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
     uint32_t name_size = strlen(filename) +1;
+    printf("setting name to an entry %s \n", filename);
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
     child_entry->parent_idx = parent_idx;
@@ -228,7 +256,6 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     Disk * disk = wrapper->current_disk;
     uint32_t parent_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
-    //we set children id sequencially, so it's useless iteratore for MAX_CHILD_NUM times
     int8_t removed= 0;
     for(int i=0; i<MAX_CHILDREN_NUM; i++){
         if(parent_entry->children[i] != FREE_DIR_CHILD_ENTRY){
@@ -242,7 +269,7 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
         }
     }
     if(!removed){
-        printf("[ERROR]You are trying to remove from %s directory a child  with entry_idx %d\n", parent_entry->entry_name, entry_idx);
+        printf("[ERROR]You are trying to remove from %s directory a child with entry_idx %d\n", parent_entry->entry_name, entry_idx);
         return -1;
     }
     return 0;
@@ -471,6 +498,7 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* new_entry = &(disk->dir_table.entries[new_entry_idx]);
     uint32_t name_size = strlen(dirName) +1;
+    printf("setting name to an entry %s \n", dirName);
     memcpy(new_entry->entry_name, dirName, name_size);
     new_entry->type = DIRECTORY_TYPE;
     new_entry->parent_idx = parent_idx;
@@ -514,17 +542,22 @@ int eraseDir(Wrapper* wrapper, const char* dirName){
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
-    uint32_t to_delete_idx, index_in_child_list;
-    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_child_list);
+    uint32_t to_delete_idx, index_in_children_array;
+    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_children_array);
     if(to_delete == NULL){
         printf("No such directory %s in directory %s\n", dirName, parent_entry->entry_name);
         return -1;
     }
     //remove all children of to_delete directory, so we change current directory
     wrapper->current_dir = to_delete_idx;
+    uint32_t child_idx;
+    uint16_t touched = 0;
     for(int i=0; i < MAX_CHILDREN_NUM; i++){
-        uint32_t child_idx = to_delete->children[i];
+        child_idx = to_delete->children[i];
         if(child_idx != FREE_DIR_CHILD_ENTRY){
+            touched++;
+            //kind of strange thing happens; i
+            if(touched > parent_entry->num_children) break;
             DirEntry* child = &(disk->dir_table.entries[child_idx]);
             if(child->type == DIRECTORY_TYPE){
                 if(eraseDir(wrapper, child->entry_name) == -1){
@@ -533,21 +566,19 @@ int eraseDir(Wrapper* wrapper, const char* dirName){
             }
             else{
                 freeBlocks(wrapper, child);
-                if(removeChild(wrapper, child_idx) == -1){
-                    return -1;
-                };
             }
+            // to make child a free entry
+            printf("%s is being set to 0 in for \n", child->entry_name);
             memset(child->entry_name, 0, MAX_NAME_LENGTH);
-            child->num_children = 0;
+            child->num_children = 0;       
         }
     }
     //restoring current directory
     wrapper->current_dir = parent_dir_idx;
-
     //now remove to_delete directory from parent children
-    to_delete->entry_name[0] = 0;
+    //printf("Directory to_delete name is %s\n", to_delete->entry_name);
     parent_entry->num_children--;
-    parent_entry->children[index_in_child_list] = FREE_DIR_CHILD_ENTRY;
+    parent_entry->children[index_in_children_array] = FREE_DIR_CHILD_ENTRY;
     printf("Directory %s succesfully removed\n", dirName);
     return 0;
 }
@@ -570,7 +601,7 @@ int changeDir(Wrapper* wrapper, const char* newDirectory){
     if(strcmp(newDirectory, "..") == 0) return goBack(wrapper);
     DirEntry* new_dir = find_by_name(wrapper, newDirectory, DIRECTORY_TYPE, &(new_dir_idx), NULL);
     if(new_dir == NULL){
-        puts("No such directory");
+        printf("No such directory: %s\n", newDirectory);
         return -1;
     }
     wrapper->current_dir = new_dir_idx;

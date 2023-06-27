@@ -16,6 +16,8 @@ void printDirTable(Wrapper wrapper){
     printf("*******************************************\n");
 }
 
+
+
 int main(int argc, char* argv[]){
     const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm";
     const char writeTest2[] = "Today we will talk about file systems and some ways to implement it";
@@ -26,8 +28,11 @@ int main(int argc, char* argv[]){
         return -1;
     }
     printf("New wrapper object created\n");
-
     int32_t res = createDir(wrapper, "operating_system");
+    if(res == -1){
+        puts("createDir error");
+        return -1;
+    }
     res = changeDir(wrapper, "operating_system");
     FileHandle* handle = createFile(wrapper, "course_introduction.txt");
     if((res = fat_write(handle, writeTest, sizeof(writeTest))) < 0){
@@ -60,21 +65,23 @@ int main(int argc, char* argv[]){
         return -1;
     };
     printf("Correctly wrote %d bytes\n", res);
+
+
+    //back to root
+    res = changeDir(wrapper, "..");
     res = changeDir(wrapper, "..");
     
-
-    res = changeDir(wrapper, "..");
-    
-
     res = createDir(wrapper, "personal_projects");
     
     listDir(wrapper);
 
+    printf("BEFORE DELETE ");
     printDirTable(*wrapper);
-
+    
     res = eraseDir(wrapper, "operating_system");
     listDir(wrapper);
 
+    printf("AFTER DELETE ");
     printDirTable(*wrapper);
 
     res = changeDir(wrapper, "personal_projects");
