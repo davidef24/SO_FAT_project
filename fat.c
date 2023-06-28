@@ -186,7 +186,6 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
     uint32_t name_size = strlen(filename) +1;
-    printf("setting name to an entry %s \n", filename);
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
     child_entry->parent_idx = parent_idx;
@@ -275,13 +274,24 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     return 0;
 }
 
+int count_free_Blocks(Wrapper* wrapper){
+    Disk * disk = wrapper->current_disk;
+    uint32_t count=0;
+    for(int i=0; i<BLOCKS_NUM; i++){
+        if (disk->fat_table.entries[i].state == FREE_ENTRY) count ++;
+    }
+    return count;
+}
+
 //to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
 int eraseFile(FileHandle* file){
     Wrapper * wrapper = file->wrapper;
     Disk* disk = wrapper->current_disk;
     uint32_t entry_idx = file->directory_entry;
     DirEntry* entry = &(disk->dir_table.entries[entry_idx]);
+    printf("Before freeBlocks function there are %d free blocks\n", count_free_Blocks(wrapper));
     freeBlocks(wrapper, entry);
+    printf("Before freeBlocks function there are %d free blocks\n", count_free_Blocks(wrapper));
     if(removeChild(wrapper, entry_idx) == -1){
         return -1;
     };
@@ -291,8 +301,8 @@ int eraseFile(FileHandle* file){
 }
 
 //entry which is now last, will have a new value indicating the new entry 
-uint32_t updateFat(Disk* disk, uint32_t first){
-    uint32_t free = -1;
+int32_t updateFat(Disk* disk, uint32_t first){
+    int32_t free = -1;
     for(int i=0; i<BLOCK_SIZE; i++){
         FatEntry* entry = &(disk->fat_table.entries[i]);
         if(entry->state == FREE_ENTRY){
@@ -303,7 +313,7 @@ uint32_t updateFat(Disk* disk, uint32_t first){
         }
     }
     if (free == -1){
-        puts("no free space");
+        puts("There are no free blocks");
         return -1;
     }
     FatEntry* current_entry= &(disk->fat_table.entries[first]);
@@ -318,13 +328,14 @@ uint32_t updateFat(Disk* disk, uint32_t first){
 Block* getNewBlock(FileHandle* handle){
     Disk* disk = handle->wrapper->current_disk;
     DirEntry* file_entry = &(disk->dir_table.entries[handle->directory_entry]);
-    uint32_t new_block_idx= updateFat(disk, file_entry->first_fat_entry);
+    int32_t new_block_idx= updateFat(disk, file_entry->first_fat_entry);
+    if(new_block_idx == -1) return NULL;
     Block* new_block = &(disk->block_list[new_block_idx]);
     return new_block;
 }
 
 //handle contains block index. From this value we need the the index in block list, which is different
-uint32_t getBlockFromIndex(FileHandle* handle){
+int32_t getBlockFromIndex(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
     DirEntry dir_entry = disk->dir_table.entries[handle->directory_entry];
     FatEntry fat_entry = disk->fat_table.entries[dir_entry.first_fat_entry];
@@ -344,7 +355,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     uint32_t curr_pos=  handle->current_pos;
     uint32_t current_block_remaining;
     uint32_t written = 0;
-    uint32_t curr_block_idx = getBlockFromIndex(handle);
+    int32_t curr_block_idx = getBlockFromIndex(handle);
     if(curr_block_idx == -1){
         puts("getBlockFromIndex error");
         return -1;
@@ -365,6 +376,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         if(handle->current_pos == BLOCK_SIZE){
             //extend file boundaries
             current_block= getNewBlock(handle);
+            if(current_block == NULL) return -1;
             new_blocks_num++;
             handle->current_block_index++;
             handle->current_pos = 0;
@@ -393,7 +405,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     Disk * disk = handle->wrapper->current_disk;
     uint32_t read_bytes = 0;
     uint32_t total_remaining = size;
-    uint32_t curr_block_idx = getBlockFromIndex(handle);
+    int32_t curr_block_idx = getBlockFromIndex(handle);
     if(curr_block_idx == -1){
         puts("getBlockFromIndex error");
         return -1;
@@ -498,11 +510,9 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* new_entry = &(disk->dir_table.entries[new_entry_idx]);
     uint32_t name_size = strlen(dirName) +1;
-    printf("setting name to an entry %s \n", dirName);
     memcpy(new_entry->entry_name, dirName, name_size);
     new_entry->type = DIRECTORY_TYPE;
     new_entry->parent_idx = parent_idx;
-    printf("Gonna create new directory with index %d in dir table and adding it to %s children\n", new_entry_idx, parent_entry->entry_name);
     //adds child to parent, assuming the limit children number has already been checked in find_entry
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
         //assume 0 as value of children[i] means it's free (any directory can have root as child)
@@ -519,10 +529,7 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
 
 int createDir(Wrapper* wrapper, const char* dirName){
     int32_t new_entry_idx = find_free_entry(wrapper, dirName);
-    if (new_entry_idx == -1){
-        puts("no free entry");
-        return -1;
-    }
+    if (new_entry_idx == -1) return -1;
     DirEntry* new_entry = createDirEntry(wrapper, dirName, new_entry_idx);
     if(new_entry == NULL){
         return -1;
@@ -538,7 +545,7 @@ void printChildrenIndex(DirEntry entry){
     }
 }
 
-int eraseDirRecursive(Wrapper* wrapper, const char* dirName, uint32_t parent_idx, uint32_t to_delete_idx, uint32_t index_in_children_list){
+int eraseDirRecursive(Wrapper* wrapper, const char* dirName, int32_t parent_idx, uint32_t to_delete_idx, uint32_t index_in_children_list){
     Disk* disk = wrapper->current_disk;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     if(parent_entry == NULL) return -1;
