@@ -29,13 +29,11 @@ int main(int argc, char* argv[]){
     }
     printf("New wrapper object created\n");
     int32_t res = createDir(wrapper, "operating_system");
-    if(res == -1){
-        puts("createDir error");
-        return -1;
-    }
+    if(res == -1) return -1;
     res = changeDir(wrapper, "operating_system");
+    if(res == -1) return -1;
     FileHandle* handle = createFile(wrapper, "course_introduction.txt");
-    if((res = fat_write(handle, writeTest, sizeof(writeTest))) < 0){
+    if(fat_write(handle, writeTest, sizeof(writeTest)) < 0){
         puts("fat_write error");
         return -1;
     };
@@ -57,10 +55,12 @@ int main(int argc, char* argv[]){
     printf("Correctly read %d bytes. \nContent is %s\n", res, readTest);
 
     res = createDir(wrapper, "lessons");
+    if(res == -1) return -1;
     res = changeDir(wrapper, "lessons");
+    if(res == -1) return -1;
 
     FileHandle* handle2 = createFile(wrapper, "os_2023-03-23.txt");
-    if((res = fat_write(handle2, writeTest2, sizeof(writeTest2))) < 0){
+    if(fat_write(handle2, writeTest2, sizeof(writeTest2)) < 0){
         puts("fat_write error");
         return -1;
     };
@@ -69,9 +69,12 @@ int main(int argc, char* argv[]){
 
     //back to root
     res = changeDir(wrapper, "..");
+    if(res == -1) return -1;
     res = changeDir(wrapper, "..");
+    if(res == -1) return -1;
     
     res = createDir(wrapper, "personal_projects");
+    if(res == -1) return -1;
     
     listDir(wrapper);
 
@@ -79,10 +82,12 @@ int main(int argc, char* argv[]){
     printDirTable(*wrapper);
     
     res = eraseDir(wrapper, "operating_system");
+    if(res == -1) return -1;
     listDir(wrapper);
 
-    printf("AFTER DELETE ");
     printDirTable(*wrapper);
+
+    res = changeDir(wrapper, "operating_system");
 
     res = changeDir(wrapper, "personal_projects");
     FileHandle* handle3 = createFile(wrapper, "project_1");
@@ -91,7 +96,10 @@ int main(int argc, char* argv[]){
 
     res = eraseFile(handle3);
 
+    printf("AFTER ERASE FILE\n");
     listDir(wrapper);
+
+    eraseDir(wrapper, "personal_projects");
 
     if(fat_destroy(wrapper) < 0){
         puts("destroy error");

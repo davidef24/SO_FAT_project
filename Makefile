@@ -7,9 +7,6 @@ BINS=fat_test
 
 .phony: clean all
 
-%.o:	%.c $(HEADERS)
-	$(CC) $(CCOPTS) -c -o $@  $<
-
 all:	 $(BINS)
 
 fat_test:		main.c fat.c

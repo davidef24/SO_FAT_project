@@ -13,8 +13,8 @@
 #define FREE_DIR_CHILD_ENTRY ((uint8_t) (~0))
 
 typedef enum DirEntryType{
-	FILE_TYPE,
-	DIRECTORY_TYPE
+	FILE_TYPE=0,
+	DIRECTORY_TYPE=1
 } DirEntryType;
 
 typedef struct DirEntry {

@@ -230,7 +230,7 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
     return handle;
 }
 
-// all fat entries referring file to delete will be set to FREE_ENTRY
+// crawling all fat entries referring file to delete and they will be set to FREE_ENTRY
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
     uint32_t current_entry_idx = entry->first_fat_entry;
@@ -538,49 +538,47 @@ void printChildrenIndex(DirEntry entry){
     }
 }
 
-int eraseDir(Wrapper* wrapper, const char* dirName){
+int eraseDirRecursive(Wrapper* wrapper, const char* dirName, uint32_t parent_idx, uint32_t to_delete_idx, uint32_t index_in_children_list){
     Disk* disk = wrapper->current_disk;
-    uint32_t parent_dir_idx = wrapper->current_dir;
-    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
-    uint32_t to_delete_idx, index_in_children_array;
-    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_children_array);
-    if(to_delete == NULL){
-        printf("No such directory %s in directory %s\n", dirName, parent_entry->entry_name);
-        return -1;
-    }
-    //remove all children of to_delete directory, so we change current directory
-    wrapper->current_dir = to_delete_idx;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
+    if(parent_entry == NULL) return -1;
+    DirEntry* to_delete = &(disk->dir_table.entries[to_delete_idx]);
+    if(to_delete == NULL) return -1;
+    DirEntry val = *(to_delete);
     uint32_t child_idx;
-    uint16_t touched = 0;
+    DirEntry* child;
+    wrapper->current_dir = to_delete_idx;
     for(int i=0; i < MAX_CHILDREN_NUM; i++){
-        child_idx = to_delete->children[i];
+        child_idx = val.children[i];
         if(child_idx != FREE_DIR_CHILD_ENTRY){
-            touched++;
-            //kind of strange thing happens; i
-            if(touched > parent_entry->num_children) break;
-            DirEntry* child = &(disk->dir_table.entries[child_idx]);
+            child = &(disk->dir_table.entries[child_idx]);
             if(child->type == DIRECTORY_TYPE){
-                if(eraseDir(wrapper, child->entry_name) == -1){
-                    return -1;
-                }
+                eraseDirRecursive(wrapper, child->entry_name, to_delete_idx, child_idx, i);
             }
             else{
                 freeBlocks(wrapper, child);
             }
-            // to make child a free entry
-            printf("%s is being set to 0 in for \n", child->entry_name);
-            memset(child->entry_name, 0, MAX_NAME_LENGTH);
-            child->num_children = 0;       
+            child->entry_name[0] = 0;
         }
     }
-    //restoring current directory
-    wrapper->current_dir = parent_dir_idx;
-    //now remove to_delete directory from parent children
-    //printf("Directory to_delete name is %s\n", to_delete->entry_name);
+    wrapper->current_dir = parent_idx;
     parent_entry->num_children--;
-    parent_entry->children[index_in_children_array] = FREE_DIR_CHILD_ENTRY;
-    printf("Directory %s succesfully removed\n", dirName);
+    parent_entry->children[index_in_children_list] = FREE_DIR_CHILD_ENTRY;
+    to_delete->entry_name[0] = 0;
     return 0;
+}
+
+int eraseDir(Wrapper* wrapper, const char* dirName){
+    Disk* disk = wrapper->current_disk;
+    uint32_t parent_dir_idx = wrapper->current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    uint32_t to_delete_idx, index_in_children_list;
+    DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_children_list);
+    if(to_delete == NULL){
+        printf("No such directory %s in directory %s\n", dirName, parent_entry->entry_name);
+        return -1;
+    }
+    return eraseDirRecursive(wrapper, dirName, parent_dir_idx, to_delete_idx, index_in_children_list);
 }
 
 int goBack(Wrapper* wrapper){
