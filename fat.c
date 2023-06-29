@@ -14,7 +14,9 @@ void fat_table_init(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
+        if(entry == NULL) return;
         entry->state = FREE_ENTRY;
+        
     }
 }
 
@@ -22,11 +24,13 @@ void printAllChildren(Wrapper wrapper){
     Disk* disk = wrapper.current_disk;
     uint32_t parent_dir_idx = wrapper.current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    if(parent_entry == NULL) return;
     printf("****************Children of %s directory*********************\n", parent_entry->entry_name);
     for(int i=0; i < MAX_CHILDREN_NUM; i++){
         uint32_t child_idx = parent_entry->children[i];
         if(child_idx != FREE_DIR_CHILD_ENTRY){
             DirEntry* child = &(disk->dir_table.entries[child_idx]);
+            if(child == NULL) return;
             printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
         }
     }
@@ -59,6 +63,7 @@ Wrapper* fat_init(const char* filename){
 
     wrapper->current_dir = 0;
     DirEntry* entry = &(wrapper->current_disk->dir_table.entries[0]);
+    if(entry == NULL) return NULL;
     entry->entry_name[0] = '/';
     entry->entry_name[1] = '\0';
     entry->num_children=0;
@@ -91,6 +96,7 @@ DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType typ
     Disk* disk = wrapper->current_disk;
     uint32_t parent_dir_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    if(parent_entry == NULL) return NULL;
     uint16_t touched = 0;
     uint32_t child_entry_idx;
     DirEntry* child_entry;
@@ -105,6 +111,7 @@ DirEntry* find_by_name(Wrapper* wrapper, const char* entryName, DirEntryType typ
             touched++;
             if(touched > parent_entry->num_children) return NULL;
             child_entry = &(dir_table.entries[child_entry_idx]);
+            if(child_entry == NULL) return NULL;
             child_name = child_entry->entry_name;
             int res1 = strcmp(entryName, child_name);
             if (res1 == 0 && child_entry->type == type){
@@ -163,8 +170,10 @@ int find_free_entry(Wrapper* wrapper, const char* entry_name){
 //first, it looks for a free entry and sets it as the last since initially the allocation is of one block
 int32_t setFirstFatEntry(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
+    if(fat == NULL) return -1;
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
+        if(entry == NULL) return -1;
         if (entry->state == FREE_ENTRY){
             entry->state = BUSY_ENTRY;
             entry->value = LAST_ENTRY; 
@@ -185,6 +194,7 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     uint32_t parent_idx = wrapper ->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* child_entry = &(disk->dir_table.entries[child_entry_idx]);
+    if(parent_entry == NULL || child_entry == NULL) return NULL;
     uint32_t name_size = strlen(filename) +1;
     memcpy(child_entry->entry_name, filename, name_size);
     child_entry->type = FILE_TYPE;
@@ -233,28 +243,30 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
     uint32_t current_entry_idx = entry->first_fat_entry;
-    FatEntry current_entry = disk->fat_table.entries[current_entry_idx];
+    FatEntry* current_entry = &(disk->fat_table.entries[current_entry_idx]);
     Block* current_block = &(disk->block_list[current_entry_idx]);
-    
-    while(current_entry.value != LAST_ENTRY){
+    if(current_block == NULL || current_entry == NULL) return;
+    while(current_entry->value != LAST_ENTRY){
         //disk block
         memset(current_block, 0, sizeof(Block));
-        current_entry.state = FREE_ENTRY;
+        current_entry->state = FREE_ENTRY;
         //next block index is the entry value of the fat table
-        uint32_t next_idx = current_entry.value;
+        uint32_t next_idx = current_entry->value;
         //fat table 
-        current_entry = disk->fat_table.entries[next_idx];
+        current_entry = &(disk->fat_table.entries[next_idx]);
         current_block = &(disk->block_list[next_idx]);
+        if(current_block == NULL || current_entry == NULL) return;
     }
     memset(current_block, 0, sizeof(Block));
 
 }
 
-//for now, in this project the remove and create functions operate from current directory
+//in this project the remove and create functions operate from current directory
 int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     Disk * disk = wrapper->current_disk;
     uint32_t parent_idx = wrapper->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
+    if(parent_entry == NULL) return -1;
     int8_t removed= 0;
     for(int i=0; i<MAX_CHILDREN_NUM; i++){
         if(parent_entry->children[i] != FREE_DIR_CHILD_ENTRY){
@@ -268,12 +280,12 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
         }
     }
     if(!removed){
-        printf("[ERROR]You are trying to remove from %s directory a child with entry_idx %d\n", parent_entry->entry_name, entry_idx);
         return -1;
     }
     return 0;
 }
 
+//for testing
 int count_free_Blocks(Wrapper* wrapper){
     Disk * disk = wrapper->current_disk;
     uint32_t count=0;
@@ -284,20 +296,19 @@ int count_free_Blocks(Wrapper* wrapper){
 }
 
 //to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
-int eraseFile(FileHandle* file){
+FAT_ops_result eraseFile(FileHandle* file){
     Wrapper * wrapper = file->wrapper;
     Disk* disk = wrapper->current_disk;
     uint32_t entry_idx = file->directory_entry;
     DirEntry* entry = &(disk->dir_table.entries[entry_idx]);
-    printf("Before freeBlocks function there are %d free blocks\n", count_free_Blocks(wrapper));
+    if(entry == NULL) return -1;
     freeBlocks(wrapper, entry);
-    printf("Before freeBlocks function there are %d free blocks\n", count_free_Blocks(wrapper));
     if(removeChild(wrapper, entry_idx) == -1){
-        return -1;
+        return NotExistingChild;
     };
     entry->entry_name[0] = 0;
     free(file);
-    return 0;
+    return Success;
 }
 
 //entry which is now last, will have a new value indicating the new entry 
@@ -305,6 +316,7 @@ int32_t updateFat(Disk* disk, uint32_t first){
     int32_t free = -1;
     for(int i=0; i<BLOCK_SIZE; i++){
         FatEntry* entry = &(disk->fat_table.entries[i]);
+        if(entry == NULL) return -1;
         if(entry->state == FREE_ENTRY){
             entry->state = BUSY_ENTRY;
             entry->value = LAST_ENTRY;
@@ -317,8 +329,10 @@ int32_t updateFat(Disk* disk, uint32_t first){
         return -1;
     }
     FatEntry* current_entry= &(disk->fat_table.entries[first]);
+    if(current_entry == NULL) return -1;
     while(current_entry->value != LAST_ENTRY){
         current_entry = &(disk->fat_table.entries[current_entry->value]);
+        if(current_entry == NULL) return -1;
     }
     current_entry->value = free;
     return free;
@@ -328,18 +342,20 @@ int32_t updateFat(Disk* disk, uint32_t first){
 Block* getNewBlock(FileHandle* handle){
     Disk* disk = handle->wrapper->current_disk;
     DirEntry* file_entry = &(disk->dir_table.entries[handle->directory_entry]);
+    if(file_entry == NULL) return NULL;
     int32_t new_block_idx= updateFat(disk, file_entry->first_fat_entry);
     if(new_block_idx == -1) return NULL;
     Block* new_block = &(disk->block_list[new_block_idx]);
+    if(new_block == NULL) return NULL;
     return new_block;
 }
 
-//handle contains block index. From this value we need the the index in block list, which is different
+//handle contains block index. From this value we need the index in block list, which is different
 int32_t getBlockFromIndex(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
-    DirEntry dir_entry = disk->dir_table.entries[handle->directory_entry];
-    FatEntry fat_entry = disk->fat_table.entries[dir_entry.first_fat_entry];
-    uint32_t next_block_idx = dir_entry.first_fat_entry;
+    DirEntry file_entry = disk->dir_table.entries[handle->directory_entry];
+    FatEntry fat_entry = disk->fat_table.entries[file_entry.first_fat_entry];
+    uint32_t next_block_idx = file_entry.first_fat_entry;
     for(int i=0; i<handle->current_block_index; i++){
         next_block_idx = fat_entry.value;
         if(next_block_idx == LAST_ENTRY){
@@ -362,6 +378,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     }
     uint32_t new_blocks_num=0;
     Block* current_block = &(disk->block_list[curr_block_idx]);
+    if(current_block == NULL) return -1;
     uint32_t total_remaining = size;
     uint32_t iteration_write;
     //no need to iterate 
@@ -376,7 +393,7 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         if(handle->current_pos == BLOCK_SIZE){
             //extend file boundaries
             current_block= getNewBlock(handle);
-            if(current_block == NULL) return -1;
+            if(current_block == NULL) return NoFreeBlocks;
             new_blocks_num++;
             handle->current_block_index++;
             handle->current_pos = 0;
@@ -411,7 +428,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
         return -1;
     }
     Block* current_block = &(disk->block_list[curr_block_idx]);
-    
+    if(current_block == NULL) return -1;
     uint32_t curr_pos=  handle->current_pos;
     uint32_t iteration_read, current_block_remaining;
     
@@ -432,6 +449,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
                 return read_bytes;
             }
             current_block = &(disk->block_list[curr_block_idx]);
+            if(current_block == NULL) return -1;
         }
         current_block_remaining = BLOCK_SIZE - handle->current_pos;
         if(total_remaining < current_block_remaining){
@@ -461,8 +479,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
     uint32_t new_position;
     if(whence == FAT_END){
         if(offset > 0) {
-            puts("invalid seek offset");
-            return -1;
+            return InvalidSeekOffset;
         }
         else{
             absolute_position = handle->last_pos_occupied;
@@ -473,8 +490,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
     }
     else if(whence == FAT_SET){
         if((int) offset < 0){
-            puts("invalid seek offset");
-            return -1;
+            return InvalidSeekOffset;
         } 
         else{
             //in this case offset is referred to the beginning of the file
@@ -488,8 +504,7 @@ int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
         //check if the offset is too large
         uint32_t available_size = (handle->current_block_index+1)*BLOCK_SIZE;
         if(absolute_position + offset < 0 || absolute_position + offset > available_size){
-            puts("invalid seek offset");
-            return -1;
+            return InvalidSeekOffset;
         }
         else{
             absolute_position = (handle->current_block_index) * BLOCK_SIZE + handle->current_pos;
@@ -509,6 +524,7 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     uint32_t parent_idx = wrapper ->current_dir;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
     DirEntry* new_entry = &(disk->dir_table.entries[new_entry_idx]);
+    if(parent_entry == NULL || new_entry == NULL) return NULL;
     uint32_t name_size = strlen(dirName) +1;
     memcpy(new_entry->entry_name, dirName, name_size);
     new_entry->type = DIRECTORY_TYPE;
@@ -527,14 +543,14 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     return new_entry;
 }
 
-int createDir(Wrapper* wrapper, const char* dirName){
+FAT_ops_result createDir(Wrapper* wrapper, const char* dirName){
     int32_t new_entry_idx = find_free_entry(wrapper, dirName);
-    if (new_entry_idx == -1) return -1;
+    if (new_entry_idx == -1) return NoFreeEntries;
     DirEntry* new_entry = createDirEntry(wrapper, dirName, new_entry_idx);
     if(new_entry == NULL){
-        return -1;
+        return AlreadyExistingChild;
     }
-    return 0;
+    return Success;
 }
 
 void printChildrenIndex(DirEntry entry){
@@ -545,12 +561,12 @@ void printChildrenIndex(DirEntry entry){
     }
 }
 
-int eraseDirRecursive(Wrapper* wrapper, const char* dirName, int32_t parent_idx, uint32_t to_delete_idx, uint32_t index_in_children_list){
+FAT_ops_result eraseDirRecursive(Wrapper* wrapper, const char* dirName, int32_t parent_idx, uint32_t to_delete_idx, uint32_t index_in_children_list){
     Disk* disk = wrapper->current_disk;
     DirEntry* parent_entry = &(disk->dir_table.entries[parent_idx]);
-    if(parent_entry == NULL) return -1;
+    if(parent_entry == NULL) return NoSuchEntryInDirTable;
     DirEntry* to_delete = &(disk->dir_table.entries[to_delete_idx]);
-    if(to_delete == NULL) return -1;
+    if(to_delete == NULL) return NoSuchEntryInDirTable;
     DirEntry val = *(to_delete);
     uint32_t child_idx;
     DirEntry* child;
@@ -560,7 +576,7 @@ int eraseDirRecursive(Wrapper* wrapper, const char* dirName, int32_t parent_idx,
         if(child_idx != FREE_DIR_CHILD_ENTRY){
             child = &(disk->dir_table.entries[child_idx]);
             if(child->type == DIRECTORY_TYPE){
-                eraseDirRecursive(wrapper, child->entry_name, to_delete_idx, child_idx, i);
+                if(eraseDirRecursive(wrapper, child->entry_name, to_delete_idx, child_idx, i) < 0) return -1;
             }
             else{
                 freeBlocks(wrapper, child);
@@ -572,45 +588,41 @@ int eraseDirRecursive(Wrapper* wrapper, const char* dirName, int32_t parent_idx,
     parent_entry->num_children--;
     parent_entry->children[index_in_children_list] = FREE_DIR_CHILD_ENTRY;
     to_delete->entry_name[0] = 0;
-    return 0;
+    return Success;
 }
 
-int eraseDir(Wrapper* wrapper, const char* dirName){
-    Disk* disk = wrapper->current_disk;
+FAT_ops_result eraseDir(Wrapper* wrapper, const char* dirName){
     uint32_t parent_dir_idx = wrapper->current_dir;
-    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
     uint32_t to_delete_idx, index_in_children_list;
     DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_children_list);
     if(to_delete == NULL){
-        printf("No such directory %s in directory %s\n", dirName, parent_entry->entry_name);
-        return -1;
+        return NoSuchDirectory;
     }
     return eraseDirRecursive(wrapper, dirName, parent_dir_idx, to_delete_idx, index_in_children_list);
 }
 
-int goBack(Wrapper* wrapper){
+FAT_ops_result goBack(Wrapper* wrapper){
     DirEntry current_dir_entry = wrapper->current_disk->dir_table.entries[wrapper->current_dir];
     if(strcmp(current_dir_entry.entry_name, "/") == 0){
         puts("current directory is root, can't go back");
-        return -1;
+        return BackFromRootError;
     }
     else{
         uint32_t new_dir_idx = current_dir_entry.parent_idx;
         wrapper->current_dir = new_dir_idx;
-        return 0;
+        return Success;
     }
 }
 
-int changeDir(Wrapper* wrapper, const char* newDirectory){
+FAT_ops_result changeDir(Wrapper* wrapper, const char* newDirectory){
     uint32_t new_dir_idx;
     if(strcmp(newDirectory, "..") == 0) return goBack(wrapper);
     DirEntry* new_dir = find_by_name(wrapper, newDirectory, DIRECTORY_TYPE, &(new_dir_idx), NULL);
     if(new_dir == NULL){
-        printf("No such directory: %s\n", newDirectory);
-        return -1;
+        return NoSuchDirectory;
     }
     wrapper->current_dir = new_dir_idx;
-    return 0;
+    return Success;
 }
 
 void listDir(Wrapper* wrapper){

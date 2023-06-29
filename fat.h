@@ -2,8 +2,8 @@
 #include <stdint.h> //uint
 #include <stddef.h> // size_t
 
-#define BLOCKS_NUM 4096
-#define BLOCK_SIZE 64
+#define BLOCKS_NUM 512
+#define BLOCK_SIZE 128
 #define DIRECTORY_ENTRIES_NUM 64
 #define MAX_CHILDREN_NUM 16
 #define MAX_NAME_LENGTH 64
@@ -16,6 +16,18 @@ typedef enum DirEntryType{
 	FILE_TYPE=0,
 	DIRECTORY_TYPE=1
 } DirEntryType;
+
+typedef enum FAT_ops_result{
+    Success = 0x0,
+    NoFreeBlocks = -1,
+    NotExistingChild = -2,
+    AlreadyExistingChild = -3,
+    NoSuchDirectory = -4,
+    InvalidSeekOffset = -5,
+    NoFreeEntries = -6,
+    NoSuchEntryInDirTable = -7,
+    BackFromRootError = -8
+} FAT_ops_result;
 
 typedef struct DirEntry {
     char entry_name[MAX_NAME_LENGTH];
@@ -84,11 +96,11 @@ int fat_destroy(Wrapper* wrapper);
 
 //all functions operate from current directory
 FileHandle* createFile(Wrapper* wrapper, const char* filename);
-int eraseFile(FileHandle* file);
-int fat_write(FileHandle* handle, const void* buffer, size_t size) ;
-int fat_read(FileHandle* handle, void* buffer, size_t size);
-int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence);
-int createDir(Wrapper* wrapper, const char* dirName);
-int eraseDir(Wrapper* wrapper,const char* dirName);
-int changeDir(Wrapper* wrapper,const char* newDirectory);
+FAT_ops_result eraseFile(FileHandle* file);
+int32_t fat_write(FileHandle* handle, const void* buffer, size_t size) ;
+int32_t fat_read(FileHandle* handle, void* buffer, size_t size);
+int32_t fat_seek(FileHandle* handle, int32_t offset, FatWhence whence);
+FAT_ops_result createDir(Wrapper* wrapper, const char* dirName);
+FAT_ops_result eraseDir(Wrapper* wrapper,const char* dirName);
+FAT_ops_result changeDir(Wrapper* wrapper,const char* newDirectory);
 void listDir(Wrapper* wrapper);
