@@ -50,7 +50,7 @@ int main(int argc, char* argv[]){
     char readTest[256] = {0};
     Wrapper* wrapper = fat_init("disk_file");
     if (wrapper == NULL){
-        perror("init error");
+        puts("init error");
         return -1;
     }
     printf("New wrapper object created\n");
@@ -84,18 +84,29 @@ int main(int argc, char* argv[]){
     printf("Correctly wrote %d bytes\n", res);
     listDir(wrapper);
 
-    if((res = fat_seek(handle, 2, FAT_SET)) < 0){
+    if((res = fat_seek(handle, -15, FAT_END)) < 0){
         puts("fat_seek error");
         return -1;
     }
-
-    if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
+    printf("[FAT_SEEK 1]After fat_seek, distance from start of file is %d bytes\n", res);
+    //if size of fat_read exceeds file end, read till end of file
+    if((res = fat_read(handle, readTest, 4)) < 0){
         puts("fat_read error");
         return -1;
     }
 
-
-    printf("Correctly read %d bytes. \nContent is %s\n", res, readTest);
+    printf("[FAT_READ 1] Correctly read %d bytes. \nContent is %s\n", res, readTest);
+    if((res = fat_seek(handle, -10, FAT_CUR)) < 0){
+        puts("fat_seek error");
+        return -1;
+    }
+    printf("[FAT_SEEK 2] After fat_seek, distance from start of file is %d bytes\n", res);
+    memset(readTest, 0, sizeof(readTest));
+    if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
+        puts("fat_read error");
+        return -1;
+    }
+    printf("[FAT_READ 2] Correctly read %d bytes. \nContent is %s\n", res, readTest);
 
     res = createDir(wrapper, "lessons");
     if(res < 0) {

@@ -84,7 +84,7 @@ typedef struct FileHandle {
 	uint32_t current_block_index;
 	uint32_t directory_entry;
     Wrapper*  wrapper;
-    uint32_t last_pos_occupied;    
+    uint32_t num_blocks_occupied;
 } FileHandle;
 
 //initialize a new disk which will be an mmapped file and returns a wrapper
