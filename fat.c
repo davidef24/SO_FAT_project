@@ -232,7 +232,6 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
     printf("Wanna delete entry with name %s\n", entry->entry_name);
     uint32_t current_entry_idx = entry->first_fat_entry;
-    printf(" current entry idx = %d\n", current_entry_idx);
     FatEntry* current_entry = &(disk->fat_table.entries[current_entry_idx]);
     Block* current_block = &(disk->block_list[current_entry_idx]);
     if(current_block == NULL || current_entry == NULL) return;
@@ -440,14 +439,12 @@ int32_t findLastPosition(FileHandle* handle){
 int fat_read(FileHandle* handle, void* buffer, size_t size) {
     Disk * disk = handle->wrapper->current_disk;
     uint32_t read_bytes = 0;
-    uint32_t total_remaining = size;
+    uint32_t effective_size = size;
     uint32_t current_absolute_position = (handle->current_block_index)*BLOCK_SIZE + handle->current_pos;
-    uint32_t last_pos;
+    uint32_t last_pos = (handle->num_blocks_occupied-1) * BLOCK_SIZE + findLastPosition(handle);
     //if function is called with a size parameter bigger than file dimension, we read till the last position of file
-    if(size > (handle->num_blocks_occupied *  BLOCK_SIZE)) {
-        puts("************size parameter is too large***************");
-        last_pos = (handle->num_blocks_occupied-1) * BLOCK_SIZE + findLastPosition(handle);
-        total_remaining = (last_pos - current_absolute_position)+1;
+    if(size > last_pos - current_absolute_position) {
+        effective_size = (last_pos - current_absolute_position)+1;
     }
     int32_t curr_block_idx = getBlockFromIndex(handle);
     if(curr_block_idx == -1){
@@ -457,14 +454,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     Block* current_block = &(disk->block_list[curr_block_idx]);
     if(current_block == NULL) return -1;
     uint32_t iteration_read, current_block_remaining;
-    //read is performed only in a disk block 
-    if(total_remaining < BLOCK_SIZE - handle->current_pos){
-        memcpy(buffer, current_block->block_content +handle->current_pos, size);
-        handle->current_pos += total_remaining;
-        iteration_read = total_remaining;
-        return iteration_read; // (???) what if reading from FAT_END n bytes forward till the end of the block?
-    }
-    while(read_bytes < total_remaining){
+    while(read_bytes < effective_size){
         if(handle->current_pos == BLOCK_SIZE){
             //number of bytes to read exceed file blocks number, so we finish here
             if((handle->current_block_index+1) >= handle->num_blocks_occupied) return iteration_read;
@@ -479,9 +469,11 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
             if(current_block == NULL) return -1;
         }
         current_block_remaining = BLOCK_SIZE - handle->current_pos;
-        if(total_remaining-read_bytes < current_block_remaining){
-            iteration_read = total_remaining-read_bytes;
+        //we are in the last block
+        if(effective_size-read_bytes < current_block_remaining){
+            iteration_read = effective_size-read_bytes;
         }
+        //we will need to read all reamining bytes of current block and then get next block to finish read
         else{
             iteration_read = current_block_remaining;
         }

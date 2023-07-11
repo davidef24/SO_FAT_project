@@ -9,7 +9,7 @@ void printDirTable(Wrapper wrapper){
     for(int i=0; i<DIRECTORY_ENTRIES_NUM;i++){
         DirEntry entry = disk.dir_table.entries[i];
         if(entry.entry_name[0] != 0){
-            printf("At index %d of directory table there is entry %s\n", i, entry.entry_name);
+            printf("index: %d\tentry name: %s\n", i, entry.entry_name);
         }
         
     }
@@ -24,7 +24,7 @@ void printFatTable(Wrapper wrapper){
     for(int i=0; i<BLOCKS_NUM;i++){
         fat_entry = fat_table.entries[i];
         if(fat_entry.state == BUSY_ENTRY){
-            printf("index %d\t value %d\n", i, fat_entry.value);
+            printf("index: %d\tvalue: %d\n", i, fat_entry.value);
         }
         
     }
