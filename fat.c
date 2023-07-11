@@ -10,30 +10,15 @@
 
 #define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
-void fat_table_init(Wrapper* wrapper){
+int fat_table_init(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
-        if(entry == NULL) return;
+        if(entry == NULL) return -1;
         entry->state = FREE_ENTRY;
         
     }
-}
-
-void printAllChildren(Wrapper wrapper){
-    Disk* disk = wrapper.current_disk;
-    uint32_t parent_dir_idx = wrapper.current_dir;
-    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
-    if(parent_entry == NULL) return;
-    printf("****************Children of %s directory*********************\n", parent_entry->entry_name);
-    for(int i=0; i < MAX_CHILDREN_NUM; i++){
-        uint32_t child_idx = parent_entry->children[i];
-        if(child_idx != FREE_DIR_CHILD_ENTRY){
-            DirEntry* child = &(disk->dir_table.entries[child_idx]);
-            if(child == NULL) return;
-            printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
-        }
-    }
+    return 0;
 }
 
 Wrapper* fat_init(const char* filename){ 
@@ -71,7 +56,7 @@ Wrapper* fat_init(const char* filename){
     
     //initialize fat table
     //for now, if an entry value is 0 this means that it is free
-    fat_table_init(wrapper);
+    if(fat_table_init(wrapper) == -1) return NULL;
     return wrapper;
 }
 
@@ -239,7 +224,7 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
     return handle;
 }
 
-// crawling all fat entries referring file to delete and they will be set to FREE_ENTRY
+// crawl all fat entries that refer to the file, set them to FREE_ENTRY and zero block content
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
     uint32_t current_entry_idx = entry->first_fat_entry;
@@ -369,7 +354,6 @@ int32_t getBlockFromIndex(FileHandle* handle){
 
 int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     Disk* disk = handle->wrapper->current_disk;
-    uint32_t curr_pos=  handle->current_pos;
     uint32_t current_block_remaining;
     uint32_t written = 0;
     int32_t curr_block_idx = getBlockFromIndex(handle);
@@ -382,10 +366,10 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     uint32_t total_remaining = size;
     uint32_t iteration_write;
     //no need to iterate 
-    if(size < BLOCK_SIZE - curr_pos){
-          memcpy(current_block->block_content +curr_pos, buffer, size);
-          handle->current_pos += size;
-          written = size;
+    if(total_remaining < BLOCK_SIZE - handle->current_pos){
+          memcpy(current_block->block_content + handle->current_pos, buffer, size);
+          handle->current_pos += total_remaining;
+          written = total_remaining;
           return written;
     }
     while(written < size){
@@ -404,12 +388,11 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         else{
             iteration_write = current_block_remaining;
         }
-        memcpy(current_block->block_content + curr_pos, buffer + written, iteration_write);
+        memcpy(current_block->block_content + handle->current_pos, buffer + written, iteration_write);
         handle->current_pos += iteration_write;
         written += iteration_write;
         total_remaining -= iteration_write;
     }
-    
     return written;
 }
 
@@ -433,6 +416,7 @@ Block* getLastBlock(FileHandle* handle, uint32_t num_blocks_occupied){
     return current_block;
 }
 
+//IMPORTANT: index of last position is taken from start of last block
 int32_t findLastPosition(FileHandle* handle){
     Block* last_block = getLastBlock(handle, handle->num_blocks_occupied);
     if(last_block == NULL) return -1;
@@ -451,7 +435,13 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     uint32_t read_bytes = 0;
     uint32_t total_remaining = size;
     uint32_t current_absolute_position = (handle->current_block_index)*BLOCK_SIZE + handle->current_pos;
-    if(size > (handle->num_blocks_occupied *  BLOCK_SIZE)) total_remaining = (findLastPosition(handle) - current_absolute_position)+1;
+    uint32_t last_pos;
+    //if function is called with a size parameter bigger than file dimension, we read till the last position of file
+    if(size > (handle->num_blocks_occupied *  BLOCK_SIZE)) {
+        puts("************size parameter is too large***************");
+        last_pos = (handle->num_blocks_occupied-1) * BLOCK_SIZE + findLastPosition(handle);
+        total_remaining = (last_pos - current_absolute_position)+1;
+    }
     int32_t curr_block_idx = getBlockFromIndex(handle);
     if(curr_block_idx == -1){
         puts("getBlockFromIndex error");
@@ -459,15 +449,13 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     }
     Block* current_block = &(disk->block_list[curr_block_idx]);
     if(current_block == NULL) return -1;
-    uint32_t curr_pos=  handle->current_pos;
     uint32_t iteration_read, current_block_remaining;
-    
     //read is performed only in a disk block 
-    if(size < BLOCK_SIZE - curr_pos){
-          memcpy(buffer, current_block->block_content +curr_pos, size);
-          handle->current_pos += size;
-          iteration_read = size;
-          return iteration_read; // (???) what if reading from FAT_END n bytes forward till the end of the block?
+    if(total_remaining < BLOCK_SIZE - handle->current_pos){
+        memcpy(buffer, current_block->block_content +handle->current_pos, size);
+        handle->current_pos += total_remaining;
+        iteration_read = total_remaining;
+        return iteration_read; // (???) what if reading from FAT_END n bytes forward till the end of the block?
     }
     while(read_bytes < total_remaining){
         if(handle->current_pos == BLOCK_SIZE){
@@ -490,11 +478,11 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
         else{
             iteration_read = current_block_remaining;
         }
-        memcpy(buffer + read_bytes, current_block->block_content + curr_pos, iteration_read);
+        memcpy(buffer + read_bytes, current_block->block_content + handle->current_pos, iteration_read);
         handle->current_pos += iteration_read;
         read_bytes += iteration_read;
     }
-    return iteration_read;
+    return read_bytes;
 }
 
 void updateHandle(FileHandle* handle, uint32_t new_position){

@@ -3,7 +3,7 @@
 #include <stddef.h> // size_t
 
 #define BLOCKS_NUM 512
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 32
 #define DIRECTORY_ENTRIES_NUM 64
 #define MAX_CHILDREN_NUM 16
 #define MAX_NAME_LENGTH 64
@@ -34,7 +34,7 @@ typedef struct DirEntry {
     DirEntryType type;
     uint32_t first_fat_entry;
     uint32_t parent_idx;
-    uint32_t num_children;
+    uint8_t num_children;
     uint8_t children[MAX_CHILDREN_NUM];
 } DirEntry;
 
@@ -91,7 +91,7 @@ typedef struct FileHandle {
 Wrapper* fat_init(const char* filename);
 
 
-void fat_table_init(Wrapper* wrapper);
+int fat_table_init(Wrapper* wrapper);
 int fat_destroy(Wrapper* wrapper);
 
 //all functions operate from current directory

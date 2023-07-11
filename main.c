@@ -4,12 +4,27 @@
 #include <string.h>
 
 void printDirTable(Wrapper wrapper){
-    printf("********************printing directory table***********************\n");
+    printf("********************directory table***********************\n");
     Disk disk = *(wrapper.current_disk);
     for(int i=0; i<DIRECTORY_ENTRIES_NUM;i++){
         DirEntry entry = disk.dir_table.entries[i];
         if(entry.entry_name[0] != 0){
             printf("At index %d of directory table there is entry %s\n", i, entry.entry_name);
+        }
+        
+    }
+    printf("*******************************************\n");
+}
+
+void printFatTable(Wrapper wrapper){
+    printf("********************fat table***********************\n");
+    Disk disk = *(wrapper.current_disk);
+    FatTable fat_table = disk.fat_table;
+    FatEntry fat_entry;
+    for(int i=0; i<BLOCKS_NUM;i++){
+        fat_entry = fat_table.entries[i];
+        if(fat_entry.state == BUSY_ENTRY){
+            printf("index %d\t value %d\n", i, fat_entry.value);
         }
         
     }
@@ -31,6 +46,22 @@ int test_exceed_child(Wrapper* wrapper){
     else return 1;
 }
 
+void printAllChildren(Wrapper wrapper){
+    Disk* disk = wrapper.current_disk;
+    uint32_t parent_dir_idx = wrapper.current_dir;
+    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
+    if(parent_entry == NULL) return;
+    printf("****************Children of %s directory*********************\n", parent_entry->entry_name);
+    for(int i=0; i < MAX_CHILDREN_NUM; i++){
+        uint32_t child_idx = parent_entry->children[i];
+        if(child_idx != FREE_DIR_CHILD_ENTRY){
+            DirEntry* child = &(disk->dir_table.entries[child_idx]);
+            if(child == NULL) return;
+            printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
+        }
+    }
+}
+
 int test_finish_blocks(Wrapper* wrapper){
     FileHandle* handle = createFile(wrapper, "test_finish_blocks.txt");
     if(handle == NULL) return 1;
@@ -47,6 +78,7 @@ int test_finish_blocks(Wrapper* wrapper){
 int main(int argc, char* argv[]){
     const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm";
     const char writeTest2[] = "Today we will talk about file systems and some ways to implement it";
+    //const char writeTest3[30];
     char readTest[256] = {0};
     Wrapper* wrapper = fat_init("disk_file");
     if (wrapper == NULL){
@@ -65,6 +97,7 @@ int main(int argc, char* argv[]){
     res = eraseDir(wrapper, "exceed_test");
     if(res == -1) return -1;
 
+
     res = createDir(wrapper, "operating_system");
     if(res == -1) return -1;
     res = changeDir(wrapper, "operating_system");
@@ -81,32 +114,47 @@ int main(int argc, char* argv[]){
         return -1;
     };
 
-    printf("Correctly wrote %d bytes\n", res);
+    printf("[FAT_WRITE 1] Correctly wrote %d bytes\n", res);
     listDir(wrapper);
 
+    //test fat_seek
     if((res = fat_seek(handle, -15, FAT_END)) < 0){
         puts("fat_seek error");
         return -1;
     }
-    printf("[FAT_SEEK 1]After fat_seek, distance from start of file is %d bytes\n", res);
+    printf("[FAT_SEEK END]After fat_seek, distance from start of file is %d bytes\n", res);
     //if size of fat_read exceeds file end, read till end of file
-    if((res = fat_read(handle, readTest, 4)) < 0){
+    if((res = fat_read(handle, readTest, 10)) < 0){
         puts("fat_read error");
         return -1;
     }
 
-    printf("[FAT_READ 1] Correctly read %d bytes. \nContent is %s\n", res, readTest);
-    if((res = fat_seek(handle, -10, FAT_CUR)) < 0){
+    printf("[FAT_READ 1] Correctly read %d bytes. \nContent:  %s\n", res, readTest);
+    if((res = fat_seek(handle, -20, FAT_CUR)) < 0){
         puts("fat_seek error");
         return -1;
     }
-    printf("[FAT_SEEK 2] After fat_seek, distance from start of file is %d bytes\n", res);
+    printf("[FAT_SEEK CUR] After fat_seek, distance from start of file is %d bytes\n", res);
     memset(readTest, 0, sizeof(readTest));
     if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
         puts("fat_read error");
         return -1;
     }
-    printf("[FAT_READ 2] Correctly read %d bytes. \nContent is %s\n", res, readTest);
+    printf("[FAT_READ 2] Correctly read %d bytes. \nContent:  %s\n", res, readTest);
+
+    if((res = fat_seek(handle, 10, FAT_SET)) < 0){
+        puts("fat_seek error");
+        return -1;
+    }
+
+    printf("[FAT_SEEK SET] After fat_seek, distance from start of file is %d bytes\n", res);
+    memset(readTest, 0, sizeof(readTest));
+    if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
+        puts("fat_read error");
+        return -1;
+    }
+
+    printf("[FAT_READ 3] Correctly read %d bytes. \nContent:  %s\n", res, readTest);
 
     res = createDir(wrapper, "lessons");
     if(res < 0) {
@@ -118,18 +166,19 @@ int main(int argc, char* argv[]){
         puts("changeDir error");
         return -1;
     }
-
     FileHandle* handle2 = createFile(wrapper, "os_2023-03-23.txt");
     if(handle2 == NULL) {
         puts("createFile error");
         return -1;
     }
-    if(fat_write(handle2, writeTest2, sizeof(writeTest2)) < 0){
+    res = fat_write(handle2, writeTest2, sizeof(writeTest2));
+    if(res < 0){
         puts("fat_write error");
         return -1;
     };
-    printf("Correctly wrote %d bytes\n", res);
+    printf("[FAT WRITE 3] Correctly wrote %d bytes\n", res);
 
+    printAllChildren(*wrapper);
 
     //back to root
     res = changeDir(wrapper, "..");
