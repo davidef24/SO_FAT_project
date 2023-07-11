@@ -26,7 +26,8 @@ typedef enum FAT_ops_result{
     InvalidSeekOffset = -5,
     NoFreeEntries = -6,
     NoSuchEntryInDirTable = -7,
-    BackFromRootError = -8
+    BackFromRootError = -8,
+    TestFailed = -9
 } FAT_ops_result;
 
 typedef struct DirEntry {

@@ -31,19 +31,19 @@ void printFatTable(Wrapper wrapper){
     printf("*******************************************\n");
 }
 
-int test_exceed_child(Wrapper* wrapper){
+FAT_ops_result test_exceed_child(Wrapper* wrapper){
     int32_t res = createDir(wrapper, "exceed_test");
-    if(res < 0) return -1;
+    if(res < 0) return TestFailed;
     res = changeDir(wrapper, "exceed_test");
-    if(res < 0) return -1;
+    if(res < 0) return TestFailed;
     char name[MAX_NAME_LENGTH];
     for(int i=0; i <= MAX_CHILDREN_NUM; i++){
         snprintf(name, sizeof(name), "Directory_%d", i);
         res = createDir(wrapper, name);
     }
    
-    if(res < 0) return 0;
-    else return 1;
+    if(res < 0) return Success;
+    else return TestFailed;
 }
 
 void printAllChildren(Wrapper wrapper){
@@ -60,25 +60,26 @@ void printAllChildren(Wrapper wrapper){
             printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
         }
     }
+    puts("*********************");
 }
 
-int test_finish_blocks(Wrapper* wrapper){
+FAT_ops_result test_finish_blocks(Wrapper* wrapper){
     FileHandle* handle = createFile(wrapper, "test_finish_blocks.txt");
     if(handle == NULL) return 1;
     char buffer[BLOCK_SIZE * (BLOCKS_NUM+10)];
     memset(buffer, 'a', BLOCK_SIZE*BLOCKS_NUM);
     if(fat_write(handle, buffer, sizeof(buffer)) < 0){
         //free all blocks occupied 
-        if (eraseFile(handle)) return 1;
-        return 0;
+        if (eraseFile(handle)) return TestFailed;
+        return Success;
     }
-    else return 1;
+    else return TestFailed;
 }
 
 int main(int argc, char* argv[]){
-    const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm";
-    const char writeTest2[] = "Today we will talk about file systems and some ways to implement it";
-    //const char writeTest3[30];
+    const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm.";
+    const char writeTest2[] = "Today we will talk about file systems and some ways to implement it.";
+    const char writeTest3[] = "For any doubt you can contact me on test@example.com.";
     char readTest[256] = {0};
     Wrapper* wrapper = fat_init("disk_file");
     if (wrapper == NULL){
@@ -92,8 +93,11 @@ int main(int argc, char* argv[]){
         puts("Test exceed_child failed");
         return -1;
     }
+    
     int32_t res = changeDir(wrapper, "..");
     if(res == -1) return -1;
+
+    //recursively removes all children directory created in previous test
     res = eraseDir(wrapper, "exceed_test");
     if(res == -1) return -1;
 
@@ -176,7 +180,36 @@ int main(int argc, char* argv[]){
         puts("fat_write error");
         return -1;
     };
-    printf("[FAT WRITE 3] Correctly wrote %d bytes\n", res);
+    printf("[FAT WRITE 3] Correctly wrote %d bytes\n ", res);
+
+    printFatTable(*wrapper);
+
+    //test fat_table behavior when adding new blocks to an existing file
+    FileHandle* handle3 = createFile(wrapper, "test_to_see_fat_table.txt");
+    if(handle3 == NULL){
+        puts("createFile error");
+        return -1;
+    }
+    if((res = fat_seek(handle, 0, FAT_END)) < 0){
+        puts("fat_seek error");
+        return -1;
+    }
+    res = fat_write(handle, writeTest3, sizeof(writeTest));
+    if(res < 0){
+        puts("fat_write error");
+        return -1;
+    };
+
+    printFatTable(*wrapper);
+
+    printf("Let's see how fat table changes after erasing a file\n");
+    res = eraseFile(handle3);
+    if(res == -1){
+        puts("eraseFile error");
+        return -1;
+    }
+    
+    printFatTable(*wrapper);
 
     printAllChildren(*wrapper);
 
@@ -216,15 +249,17 @@ int main(int argc, char* argv[]){
         puts("changeDir error");
         return -1;
     }
-    FileHandle* handle3 = createFile(wrapper, "project_1.txt");
-    if(handle3 == NULL){
+    FileHandle* handle4 = createFile(wrapper, "project_1.txt");
+    if(handle4 == NULL){
         puts("createFile error");
         return -1;
     }
 
+    printFatTable(*wrapper);
+
     listDir(wrapper);
 
-    res = eraseFile(handle3);
+    res = eraseFile(handle4);
     if(res == -1){
         puts("eraseFile error");
         return -1;

@@ -156,10 +156,12 @@ int find_free_entry(Wrapper* wrapper, const char* entry_name){
 int32_t setFirstFatEntry(Wrapper* wrapper){
     FatTable* fat = &(wrapper->current_disk->fat_table);
     if(fat == NULL) return -1;
+    FatEntry* entry;
     for(int i=0; i<BLOCKS_NUM; i++){
-        FatEntry* entry = &(fat->entries[i]);
+        entry = &(fat->entries[i]);
         if(entry == NULL) return -1;
         if (entry->state == FREE_ENTRY){
+            printf("Found free entry at index %d\n", i);
             entry->state = BUSY_ENTRY;
             entry->value = LAST_ENTRY; 
             return i;
@@ -185,7 +187,8 @@ FileHandle* createFileEntry(Wrapper* wrapper, const char* filename, uint32_t chi
     child_entry->type = FILE_TYPE;
     child_entry->parent_idx = parent_idx;
     //assigns to the new file a first entry in the fat table, which will be set to  busy state and LAST_ENTRY value
-    if((child_entry->first_fat_entry = setFirstFatEntry(wrapper) == -1)){
+    child_entry->first_fat_entry = setFirstFatEntry(wrapper);
+    if(child_entry->first_fat_entry == -1){
         puts("there are no free entries in fat table");
         return NULL;
     }
@@ -227,7 +230,9 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
 // crawl all fat entries that refer to the file, set them to FREE_ENTRY and zero block content
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
+    printf("Wanna delete entry with name %s\n", entry->entry_name);
     uint32_t current_entry_idx = entry->first_fat_entry;
+    printf(" current entry idx = %d\n", current_entry_idx);
     FatEntry* current_entry = &(disk->fat_table.entries[current_entry_idx]);
     Block* current_block = &(disk->block_list[current_entry_idx]);
     if(current_block == NULL || current_entry == NULL) return;
@@ -244,6 +249,7 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
         if(current_block == NULL || current_entry == NULL) return;
     }
     memset(current_block, 0, sizeof(Block));
+    current_entry->state = FREE_ENTRY;
 
 }
 
@@ -300,8 +306,9 @@ FAT_ops_result eraseFile(FileHandle* file){
 //entry which is now last, will have a new value indicating the new entry 
 int32_t updateFat(Disk* disk, uint32_t first){
     int32_t free = -1;
-    for(int i=0; i<BLOCK_SIZE; i++){
-        FatEntry* entry = &(disk->fat_table.entries[i]);
+    FatEntry* entry;
+    for(int i=0; i<BLOCKS_NUM; i++){
+        entry = &(disk->fat_table.entries[i]);
         if(entry == NULL) return -1;
         if(entry->state == FREE_ENTRY){
             entry->state = BUSY_ENTRY;
@@ -336,7 +343,7 @@ Block* getNewBlock(FileHandle* handle){
     return new_block;
 }
 
-//handle contains block index. From this value we need the index in block list, which is different
+//handle contains block index. From this value we need the index in block array, which is different
 int32_t getBlockFromIndex(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
     DirEntry file_entry = disk->dir_table.entries[handle->directory_entry];
