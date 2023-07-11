@@ -230,7 +230,6 @@ FileHandle* createFile(Wrapper* wrapper, const char* filename){
 // crawl all fat entries that refer to the file, set them to FREE_ENTRY and zero block content
 void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Disk* disk = wrapper->current_disk;
-    printf("Wanna delete entry with name %s\n", entry->entry_name);
     uint32_t current_entry_idx = entry->first_fat_entry;
     FatEntry* current_entry = &(disk->fat_table.entries[current_entry_idx]);
     Block* current_block = &(disk->block_list[current_entry_idx]);
@@ -343,7 +342,7 @@ Block* getNewBlock(FileHandle* handle){
 }
 
 //handle contains block index. From this value we need the index in block array, which is different
-int32_t getBlockFromIndex(FileHandle* handle){
+int32_t getBlockIndexFromHandle(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
     DirEntry file_entry = disk->dir_table.entries[handle->directory_entry];
     FatEntry fat_entry = disk->fat_table.entries[file_entry.first_fat_entry];
@@ -362,22 +361,15 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     Disk* disk = handle->wrapper->current_disk;
     uint32_t current_block_remaining;
     uint32_t written = 0;
-    int32_t curr_block_idx = getBlockFromIndex(handle);
+    int32_t curr_block_idx = getBlockIndexFromHandle(handle);
     if(curr_block_idx == -1){
-        puts("getBlockFromIndex error");
+        puts("getBlockIndexFromHandle error");
         return -1;
     }
     Block* current_block = &(disk->block_list[curr_block_idx]);
     if(current_block == NULL) return -1;
     uint32_t total_remaining = size;
     uint32_t iteration_write;
-    //no need to iterate 
-    if(total_remaining < BLOCK_SIZE - handle->current_pos){
-          memcpy(current_block->block_content + handle->current_pos, buffer, size);
-          handle->current_pos += total_remaining;
-          written = total_remaining;
-          return written;
-    }
     while(written < size){
         if(handle->current_pos == BLOCK_SIZE){
             //extend file boundaries
@@ -446,9 +438,9 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
     if(size > last_pos - current_absolute_position) {
         effective_size = (last_pos - current_absolute_position)+1;
     }
-    int32_t curr_block_idx = getBlockFromIndex(handle);
+    int32_t curr_block_idx = getBlockIndexFromHandle(handle);
     if(curr_block_idx == -1){
-        puts("getBlockFromIndex error");
+        puts("getBlockIndexFromHandle error");
         return -1;
     }
     Block* current_block = &(disk->block_list[curr_block_idx]);
@@ -460,7 +452,7 @@ int fat_read(FileHandle* handle, void* buffer, size_t size) {
             if((handle->current_block_index+1) >= handle->num_blocks_occupied) return iteration_read;
             handle->current_block_index++;
             handle->current_pos = 0;
-            curr_block_idx = getBlockFromIndex(handle);
+            curr_block_idx = getBlockIndexFromHandle(handle);
             //there are no more blocks
             if(curr_block_idx == -1){
                 return read_bytes;
@@ -653,7 +645,7 @@ void listDir(Wrapper* wrapper){
     uint32_t current_dir_idx = wrapper->current_dir;
     Disk* disk = wrapper->current_disk;
     DirEntry current_dir_entry = disk->dir_table.entries[current_dir_idx];
-    printf("Listing content of directory %s\n", current_dir_entry.entry_name);
+    printf("**************listing content of directory %s **********************\n", current_dir_entry.entry_name);
     for(int i=0; i < MAX_CHILDREN_NUM; i++){
         if(current_dir_entry.children[i] != FREE_DIR_CHILD_ENTRY){
            uint32_t child_idx = current_dir_entry.children[i];
@@ -661,4 +653,5 @@ void listDir(Wrapper* wrapper){
            printf("-----%s\n", child.entry_name); 
         } 
     }
+    puts("***********************");
 }

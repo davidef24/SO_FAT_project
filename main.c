@@ -180,7 +180,7 @@ int main(int argc, char* argv[]){
         puts("fat_write error");
         return -1;
     };
-    printf("[FAT WRITE 3] Correctly wrote %d bytes\n ", res);
+    printf("[FAT WRITE 2] Correctly wrote %d bytes\n", res);
 
     printFatTable(*wrapper);
 
