@@ -129,7 +129,7 @@ int main(int argc, char* argv[]){
 
     printFatTable(*wrapper);
 
-    printf("[FAT_WRITE 1] Correctly wrote %d bytes\n", res);
+    printf("[FAT WRITE 1] Correctly wrote %d bytes\n", res);
     listDir(wrapper);
 
     //test fat_seek
@@ -205,11 +205,13 @@ int main(int argc, char* argv[]){
         puts("fat_seek error");
         return -1;
     }
-    res = fat_write(handle, writeTest3, sizeof(writeTest));
+    res = fat_write(handle, writeTest3, sizeof(writeTest3));
     if(res < 0){
         puts("fat_write error");
         return -1;
     };
+
+    printf("[FAT WRITE 3] Correctly wrote %d bytes\n", res);
 
     printf("**********fat table after extending a file boundaries*****************\n");
     printFatTable(*wrapper);

@@ -45,10 +45,6 @@ typedef enum FatWhence{
     FAT_SET= 2
 } FatWhence;
 
-typedef enum FatEntryState {
-    FREE_ENTRY,
-    BUSY_ENTRY
-}FatEntryState;
 
 typedef struct FatEntry {
     uint32_t free:1;
@@ -91,9 +87,9 @@ typedef struct FileHandle {
 
 //initialize a new disk which will be an mmapped file and returns a wrapper
 Wrapper* fat_init(const char* filename);
-
-
+//initialize fat table with alle entries set to free
 int fat_table_init(Wrapper* wrapper);
+// free resources
 int fat_destroy(Wrapper* wrapper);
 
 //all functions operate from current directory

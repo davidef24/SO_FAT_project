@@ -21,7 +21,7 @@ int fat_table_init(Wrapper* wrapper){
     return 0;
 }
 
-void initChildList(DirEntry* entry){
+void initChildrenList(DirEntry* entry){
     for(int i=0; i<MAX_CHILDREN_NUM;i++){
         entry->children[i] = FREE_DIR_CHILD_ENTRY;
     }
@@ -59,7 +59,7 @@ Wrapper* fat_init(const char* filename){
     entry->entry_name[0] = '/';
     entry->entry_name[1] = '\0';
     entry->num_children=0;
-    initChildList(entry);
+    initChildrenList(entry);
     
     //initialize fat table
     //for now, if an entry value is 0 this means that it is free
@@ -555,7 +555,7 @@ DirEntry* createDirEntry(Wrapper *wrapper, const char* dirName, uint32_t new_ent
     } 
     parent_entry->num_children++;
     new_entry->num_children = 0;
-    initChildList(new_entry);
+    initChildrenList(new_entry);
     return new_entry;
 }
 
