@@ -23,8 +23,8 @@ void printFatTable(Wrapper wrapper){
     FatEntry fat_entry;
     for(int i=0; i<BLOCKS_NUM;i++){
         fat_entry = fat_table.entries[i];
-        if(fat_entry.state == BUSY_ENTRY){
-            printf("index: %d\tvalue: %d\n", i, fat_entry.value);
+        if(!fat_entry.free){
+            printf("index: %d\teof: %d\tnext: %d\n", i, fat_entry.eof, fat_entry.next);
         }
         
     }
@@ -93,30 +93,41 @@ int main(int argc, char* argv[]){
         puts("Test exceed_child failed");
         return -1;
     }
-    
+
     int32_t res = changeDir(wrapper, "..");
-    if(res == -1) return -1;
+    if(res < 0) return -1;
 
     //recursively removes all children directory created in previous test
     res = eraseDir(wrapper, "exceed_test");
-    if(res == -1) return -1;
-
+    if(res < 0) {
+        puts("eraseDir error");
+        return -1;
+    }
 
     res = createDir(wrapper, "operating_system");
-    if(res == -1) return -1;
+    if(res < 0) {
+        puts("createDir error");
+        return -1;
+    }
     res = changeDir(wrapper, "operating_system");
-    if(res == -1) return -1;
+    if(res < 0) {
+        puts("changeDir error");
+        return -1;
+    }
 
     if(test_finish_blocks(wrapper)){
         puts("Test finish_blocks failed");
         return -1;
     }
+
     FileHandle* handle = createFile(wrapper, "course_introduction.txt");
     res = fat_write(handle, writeTest, sizeof(writeTest));
     if(res < 0){
         puts("fat_write error");
         return -1;
     };
+
+    printFatTable(*wrapper);
 
     printf("[FAT_WRITE 1] Correctly wrote %d bytes\n", res);
     listDir(wrapper);

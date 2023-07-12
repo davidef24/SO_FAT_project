@@ -15,7 +15,7 @@ int fat_table_init(Wrapper* wrapper){
     for(int i=0; i<BLOCKS_NUM; i++){
         FatEntry* entry = &(fat->entries[i]);
         if(entry == NULL) return -1;
-        entry->state = FREE_ENTRY;
+        entry->free = 1;
         
     }
     return 0;
@@ -160,10 +160,9 @@ int32_t setFirstFatEntry(Wrapper* wrapper){
     for(int i=0; i<BLOCKS_NUM; i++){
         entry = &(fat->entries[i]);
         if(entry == NULL) return -1;
-        if (entry->state == FREE_ENTRY){
-            printf("Found free entry at index %d\n", i);
-            entry->state = BUSY_ENTRY;
-            entry->value = LAST_ENTRY; 
+        if (entry->free){
+            entry->free = 0;
+            entry->eof = 1; 
             return i;
         }
     }
@@ -235,19 +234,21 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
     Block* current_block = &(disk->block_list[current_entry_idx]);
     if(current_block == NULL || current_entry == NULL) return;
     uint32_t next_idx;
-    while(current_entry->value != LAST_ENTRY){
+    while(!current_entry->eof){
         //disk block
         memset(current_block, 0, sizeof(Block));
-        current_entry->state = FREE_ENTRY;
+        current_entry->free = 1;
         //next block index is the entry value of the fat table
-        next_idx = current_entry->value;
+        next_idx = current_entry->next;
+        current_entry->next = 0;
         //fat table 
         current_entry = &(disk->fat_table.entries[next_idx]);
         current_block = &(disk->block_list[next_idx]);
         if(current_block == NULL || current_entry == NULL) return;
     }
     memset(current_block, 0, sizeof(Block));
-    current_entry->state = FREE_ENTRY;
+    current_entry->free = 1;
+    current_entry->next = 0;
 
 }
 
@@ -275,16 +276,6 @@ int removeChild(Wrapper* wrapper, uint32_t entry_idx){
     return 0;
 }
 
-//for testing
-int count_free_Blocks(Wrapper* wrapper){
-    Disk * disk = wrapper->current_disk;
-    uint32_t count=0;
-    for(int i=0; i<BLOCKS_NUM; i++){
-        if (disk->fat_table.entries[i].state == FREE_ENTRY) count ++;
-    }
-    return count;
-}
-
 //to erase a file we need to remove it from parent children, set fat table entries to free and free all file blocks
 FAT_ops_result eraseFile(FileHandle* file){
     Wrapper * wrapper = file->wrapper;
@@ -305,12 +296,13 @@ FAT_ops_result eraseFile(FileHandle* file){
 int32_t updateFat(Disk* disk, uint32_t first){
     int32_t free = -1;
     FatEntry* entry;
+    //look for a free block
     for(int i=0; i<BLOCKS_NUM; i++){
         entry = &(disk->fat_table.entries[i]);
         if(entry == NULL) return -1;
-        if(entry->state == FREE_ENTRY){
-            entry->state = BUSY_ENTRY;
-            entry->value = LAST_ENTRY;
+        if(entry->free){
+            entry->free = 0;
+            entry->eof = 1;
             free= i;
             break;
         }
@@ -321,11 +313,12 @@ int32_t updateFat(Disk* disk, uint32_t first){
     }
     FatEntry* current_entry= &(disk->fat_table.entries[first]);
     if(current_entry == NULL) return -1;
-    while(current_entry->value != LAST_ENTRY){
-        current_entry = &(disk->fat_table.entries[current_entry->value]);
+    while(!current_entry->eof){
+        current_entry = &(disk->fat_table.entries[current_entry->next]);
         if(current_entry == NULL) return -1;
     }
-    current_entry->value = free;
+    current_entry->eof = 0;
+    current_entry->next = free;
     return free;
 
 }
@@ -348,10 +341,11 @@ int32_t getBlockIndexFromHandle(FileHandle* handle){
     FatEntry fat_entry = disk->fat_table.entries[file_entry.first_fat_entry];
     uint32_t next_block_idx = file_entry.first_fat_entry;
     for(int i=0; i<handle->current_block_index; i++){
-        next_block_idx = fat_entry.value;
-        if(next_block_idx == LAST_ENTRY){
+        //error because iteration would go on but we arrived to eof so there is a mistake in current_block_index
+        if(fat_entry.eof){
             return -1;
         }
+        next_block_idx = fat_entry.next;
         fat_entry = disk->fat_table.entries[next_block_idx];
     }
     return next_block_idx;
@@ -374,7 +368,10 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
         if(handle->current_pos == BLOCK_SIZE){
             //extend file boundaries
             current_block= getNewBlock(handle);
-            if(current_block == NULL) return NoFreeBlocks;
+            if(current_block == NULL) {
+                puts("current block == NULL");
+                return NoFreeBlocks;
+            }
             handle->num_blocks_occupied++;
             handle->current_block_index++;
             handle->current_pos = 0;
@@ -404,8 +401,8 @@ Block* getLastBlock(FileHandle* handle, uint32_t num_blocks_occupied){
     Block* current_block = &(disk->block_list[current_entry_idx]);
     if(current_block == NULL || current_entry == NULL) return NULL;
     uint32_t next_idx;
-    while(current_entry->value != LAST_ENTRY){
-        next_idx = current_entry->value;
+    while(!current_entry->eof){
+        next_idx = current_entry->next;
         //fat table 
         current_entry = &(disk->fat_table.entries[next_idx]);
         current_block = &(disk->block_list[next_idx]);
@@ -612,6 +609,7 @@ FAT_ops_result eraseDir(Wrapper* wrapper, const char* dirName){
     uint32_t to_delete_idx, index_in_children_list;
     DirEntry* to_delete = find_by_name(wrapper, dirName, DIRECTORY_TYPE, &to_delete_idx, &index_in_children_list);
     if(to_delete == NULL){
+        puts("No such directory to delete");
         return NoSuchDirectory;
     }
     return eraseDirRecursive(wrapper, dirName, parent_dir_idx, to_delete_idx, index_in_children_list);

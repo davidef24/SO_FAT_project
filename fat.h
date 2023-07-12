@@ -10,7 +10,7 @@
 
 
 
-#define FREE_DIR_CHILD_ENTRY ((uint8_t) (~0))
+#define FREE_DIR_CHILD_ENTRY -1
 
 typedef enum DirEntryType{
 	FILE_TYPE=0,
@@ -35,8 +35,8 @@ typedef struct DirEntry {
     DirEntryType type;
     uint32_t first_fat_entry;
     uint32_t parent_idx;
-    uint8_t num_children;
-    uint8_t children[MAX_CHILDREN_NUM];
+    uint32_t num_children;
+    int32_t children[MAX_CHILDREN_NUM];
 } DirEntry;
 
 typedef enum FatWhence{
@@ -50,9 +50,17 @@ typedef enum FatEntryState {
     BUSY_ENTRY
 }FatEntryState;
 
+/*
 typedef struct FatEntry {
     FatEntryState state;
     uint32_t value;
+} FatEntry;
+*/
+
+typedef struct FatEntry {
+    uint32_t free:1;
+    uint32_t eof:1;
+    uint32_t next:30;
 }FatEntry;
 
 typedef struct FatTable {
