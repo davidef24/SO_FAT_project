@@ -211,6 +211,7 @@ int main(int argc, char* argv[]){
         return -1;
     };
 
+    printf("**********fat table after extending a file boundaries*****************\n");
     printFatTable(*wrapper);
 
     printf("Let's see how fat table changes after erasing a file\n");

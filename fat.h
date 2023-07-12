@@ -50,13 +50,6 @@ typedef enum FatEntryState {
     BUSY_ENTRY
 }FatEntryState;
 
-/*
-typedef struct FatEntry {
-    FatEntryState state;
-    uint32_t value;
-} FatEntry;
-*/
-
 typedef struct FatEntry {
     uint32_t free:1;
     uint32_t eof:1;
