@@ -231,7 +231,7 @@ int main(int argc, char* argv[]){
 
     printf("Let's see how fat table changes after erasing a file\n");
     res = eraseFile(handle3);
-    if(res == -1){
+    if(res < 0){
         puts("eraseFile error");
         return -1;
     }
@@ -287,7 +287,7 @@ int main(int argc, char* argv[]){
     listDir(wrapper);
 
     res = eraseFile(handle4);
-    if(res == -1){
+    if(res < 0){
         puts("eraseFile error");
         return -1;
     }
