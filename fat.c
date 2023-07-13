@@ -7,6 +7,7 @@
 #include <unistd.h> // close, ftruncate
 #include <stddef.h> // size_t
 #include <errno.h>
+#include <assert.h>
 
 #define MMAPPED_MEMORY_SIZE sizeof(Block)*BLOCKS_NUM + sizeof(FatTable) + sizeof(DirTable)
 
@@ -484,6 +485,7 @@ void updateHandle(FileHandle* handle, uint32_t new_position){
 
 //returns offset from file beginning
 int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
+    assert(whence == FAT_CUR || whence == FAT_END || whence == FAT_SET);
     uint32_t absolute_position; // depends on whence
     uint32_t new_position;
     int32_t last_pos;
