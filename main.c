@@ -121,6 +121,10 @@ int main(int argc, char* argv[]){
     }
 
     FileHandle* handle = createFile(wrapper, "course_introduction.txt");
+    if(handle == NULL){
+        puts("createFile error");
+        return -1;
+    }
     res = fat_write(handle, writeTest, sizeof(writeTest));
     if(res < 0){
         puts("fat_write error");
