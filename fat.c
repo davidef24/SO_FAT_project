@@ -238,7 +238,7 @@ void freeBlocks(Wrapper* wrapper, DirEntry* entry){
         //disk block
         memset(current_block, 0, sizeof(Block));
         current_entry->free = 1;
-        //next block index is the entry value of the fat table
+        //next block index is in 'next' field of fat entry
         next_idx = current_entry->next;
         current_entry->next = 0;
         //fat table 
@@ -321,7 +321,6 @@ int32_t updateFat(Disk* disk, uint32_t first){
     current_entry->eof = 0;
     current_entry->next = free;
     return free;
-
 }
 
 // get first free fat table entry, update previous last block and return new block
@@ -336,7 +335,7 @@ Block* getNewBlock(FileHandle* handle){
     return new_block;
 }
 
-//handle contains block index. From this value we need the index in block array, which is different
+// given the handle current block index, we want the index in blocks list
 int32_t getBlockIndexFromHandle(FileHandle* handle){
     Disk*disk = handle->wrapper->current_disk;
     DirEntry file_entry = disk->dir_table.entries[handle->directory_entry];
@@ -370,13 +369,10 @@ int fat_write(FileHandle* handle, const void* buffer, size_t size) {
     uint32_t iteration_write;
     while(written < size){
         //need new block
-        if(handle->current_pos == BLOCK_SIZE){
+        if(handle->current_pos == BLOCK_SIZE){ 
             //extend file boundaries
             current_block= getNewBlock(handle);
-            if(current_block == NULL) {
-                puts("current block == NULL");
-                return NoFreeBlocks;
-            }
+            if(current_block == NULL) return NoFreeBlocks;
             handle->num_blocks_occupied++;
             handle->current_block_index++;
             handle->current_pos = 0;
@@ -488,7 +484,7 @@ void updateHandle(FileHandle* handle, uint32_t new_position){
 
 //returns offset from file beginning
 int fat_seek(FileHandle* handle, int32_t offset, FatWhence whence){
-    uint32_t absolute_position;
+    uint32_t absolute_position; // depends on whence
     uint32_t new_position;
     int32_t last_pos;
     uint32_t max_position = (handle->num_blocks_occupied)*BLOCK_SIZE;

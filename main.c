@@ -79,7 +79,7 @@ FAT_ops_result test_finish_blocks(Wrapper* wrapper){
 int main(int argc, char* argv[]){
     const char writeTest[] = "Lessons will be held on Tuesdays 10.00 am- 12.00 am and Fridays 3.00 pm - 5.00 pm.";
     const char writeTest2[] = "Today we will talk about file systems and some ways to implement it.";
-    const char writeTest3[] = "For any doubt you can contact me on test@example.com.";
+    const char writeTest3[] = " For any doubt you can contact me on test@example.com.";
     char readTest[256] = {0};
     Wrapper* wrapper = fat_init("disk_file");
     if (wrapper == NULL){
@@ -215,6 +215,19 @@ int main(int argc, char* argv[]){
 
     printf("**********fat table after extending a file boundaries*****************\n");
     printFatTable(*wrapper);
+
+    if((res = fat_seek(handle, 0, FAT_SET)) < 0){
+        puts("fat_seek error");
+        return -1;
+    }
+
+    memset(readTest, 0, sizeof(readTest));
+    if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
+        puts("fat_read error");
+        return -1;
+    }
+
+    printf("[FAT_READ 4] Correctly read %d bytes. \nContent:  %s\n", res, readTest);
 
     printf("Let's see how fat table changes after erasing a file\n");
     res = eraseFile(handle3);
