@@ -3,19 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void printDirTable(Wrapper wrapper){
-    printf("********************directory table***********************\n");
-    Disk disk = *(wrapper.current_disk);
-    for(int i=0; i<DIRECTORY_ENTRIES_NUM;i++){
-        DirEntry entry = disk.dir_table.entries[i];
-        if(entry.entry_name[0] != 0){
-            printf("index: %d\tentry name: %s\n", i, entry.entry_name);
-        }
-        
-    }
-    printf("*******************************************\n");
-}
-
 void printFatTable(Wrapper wrapper){
     printf("********************fat table***********************\n");
     Disk disk = *(wrapper.current_disk);
@@ -24,7 +11,7 @@ void printFatTable(Wrapper wrapper){
     for(int i=0; i<BLOCKS_NUM;i++){
         fat_entry = fat_table.entries[i];
         if(!fat_entry.free){
-            printf("index: %d\teof: %d\tnext: %d\n", i, fat_entry.eof, fat_entry.next);
+            printf("index: %d\tname: %s\t eof: %d\tnext: %d\tnum_children: %d\tparent_idx: %d\tdirectory:  %d\n", i, fat_entry.entry_name ,fat_entry.eof, fat_entry.next, fat_entry.num_children, fat_entry.parent_idx, fat_entry.directory);
         }
         
     }
@@ -44,23 +31,6 @@ FAT_ops_result test_exceed_child(Wrapper* wrapper){
    
     if(res < 0) return Success;
     else return TestFailed;
-}
-
-void printAllChildren(Wrapper wrapper){
-    Disk* disk = wrapper.current_disk;
-    uint32_t parent_dir_idx = wrapper.current_dir;
-    DirEntry* parent_entry = &(disk->dir_table.entries[parent_dir_idx]);
-    if(parent_entry == NULL) return;
-    printf("****************Children of %s directory*********************\n", parent_entry->entry_name);
-    for(int i=0; i < MAX_CHILDREN_NUM; i++){
-        uint32_t child_idx = parent_entry->children[i];
-        if(child_idx != FREE_DIR_CHILD_ENTRY){
-            DirEntry* child = &(disk->dir_table.entries[child_idx]);
-            if(child == NULL) return;
-            printf("child name: %s\t index in child list: %d\t index in directory table: %d\n", child->entry_name, i, child_idx);
-        }
-    }
-    puts("*********************");
 }
 
 FAT_ops_result test_finish_blocks(Wrapper* wrapper){
@@ -104,6 +74,8 @@ int main(int argc, char* argv[]){
         return -1;
     }
 
+    printFatTable(*wrapper);
+    listDir(wrapper);
     res = createDir(wrapper, "operating_system");
     if(res < 0) {
         puts("createDir error");
@@ -120,6 +92,7 @@ int main(int argc, char* argv[]){
         return -1;
     }
 
+    printFatTable(*wrapper);
     FileHandle* handle = createFile(wrapper, "course_introduction.txt");
     if(handle == NULL){
         puts("createFile error");
@@ -168,11 +141,11 @@ int main(int argc, char* argv[]){
 
     printf("[FAT_SEEK SET] After fat_seek, distance from start of file is %d bytes\n", res);
     memset(readTest, 0, sizeof(readTest));
+    printFatTable(*wrapper);
     if((res = fat_read(handle, readTest, sizeof(readTest))) < 0){
         puts("fat_read error");
         return -1;
     }
-
     printf("[FAT_READ 3] Correctly read %d bytes. \nContent:  %s\n", res, readTest);
 
     res = createDir(wrapper, "lessons");
@@ -242,7 +215,7 @@ int main(int argc, char* argv[]){
     
     printFatTable(*wrapper);
 
-    printAllChildren(*wrapper);
+   // printAllChildren(*wrapper);
 
     //back to root
     res = changeDir(wrapper, "..");
@@ -255,31 +228,37 @@ int main(int argc, char* argv[]){
         puts("changeDir error");
         return -1;
     }
+
     
     res = createDir(wrapper, "personal_projects");
     if(res < 0) {
         puts("createDir error");
         return -1;
     }
-    
+    printf("after creating personal_project dir\n");
+    printFatTable(*wrapper);
     listDir(wrapper);
 
-    printDirTable(*wrapper);
-    
+    //printDirTable(*wrapper);
+
     res = eraseDir(wrapper, "operating_system");
     if(res < 0){
         puts("eraseDir error");
         return -1;
     }
+
+    printf("after erasing operating system dir\n");
+    printFatTable(*wrapper);
     listDir(wrapper);
 
-    printDirTable(*wrapper);
+  //  printDirTable(*wrapper);
 
     res = changeDir(wrapper, "personal_projects");
     if(res < 0) {
         puts("changeDir error");
         return -1;
     }
+    printFatTable(*wrapper);
     FileHandle* handle4 = createFile(wrapper, "project_1.txt");
     if(handle4 == NULL){
         puts("createFile error");
@@ -287,7 +266,6 @@ int main(int argc, char* argv[]){
     }
 
     printFatTable(*wrapper);
-
     listDir(wrapper);
 
     res = eraseFile(handle4);
@@ -311,7 +289,6 @@ int main(int argc, char* argv[]){
         return -1;
     }
 
-    printDirTable(*wrapper);
 
     if(fat_destroy(wrapper) < 0){
         puts("destroy error");

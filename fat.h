@@ -30,15 +30,6 @@ typedef enum FAT_ops_result{
     TestFailed = -9
 } FAT_ops_result;
 
-typedef struct DirEntry {
-    char entry_name[MAX_NAME_LENGTH];
-    DirEntryType type;
-    uint32_t first_fat_entry;
-    uint32_t parent_idx;
-    uint32_t num_children;
-    int32_t children[MAX_CHILDREN_NUM];
-} DirEntry;
-
 typedef enum FatWhence{
     FAT_CUR=0,
     FAT_END =1,
@@ -47,27 +38,33 @@ typedef enum FatWhence{
 
 
 typedef struct FatEntry {
+    char entry_name[MAX_NAME_LENGTH];
     uint32_t free:1;
     uint32_t eof:1;
-    uint32_t next:30;
+    uint32_t directory:1;
+    uint32_t next:29;
+    uint32_t num_children;
+    int32_t parent_idx; //only root has value -1
 }FatEntry;
 
 typedef struct FatTable {
     FatEntry entries[BLOCKS_NUM];
 } FatTable;
 
-typedef struct DirTable {
-    DirEntry entries[DIRECTORY_ENTRIES_NUM];
-} DirTable;
+typedef struct DirectoryEntry{
+    char name[MAX_NAME_LENGTH];
+    uint32_t first_fat_entry;
+} DirectoryEntry;
 
 typedef struct Block{
-    char block_content[BLOCK_SIZE];
+    DirectoryEntry directory_table[MAX_CHILDREN_NUM];
+    char file_content[BLOCK_SIZE];
 } Block;
 
 
 typedef struct Disk{
     FatTable fat_table;
-    DirTable dir_table;
+    //DirTable dir_table;
     Block block_list[BLOCKS_NUM];
 } Disk;
 
